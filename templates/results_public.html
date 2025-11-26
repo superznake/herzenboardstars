@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Результаты премии</h2>
+{% if results_data %}
+    <ul class="list-group mt-3">
+    {% for r in results_data %}
+        <li class="list-group-item">
+            <strong>{{ r.category.name }}:</strong> {{ r.winner.name }}
+        </li>
+    {% endfor %}
+    </ul>
+{% else %}
+    <p>Результаты пока не опубликованы.</p>
+{% endif %}
+{% endblock %}

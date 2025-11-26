@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Генерация одноразовой ссылки для жюри</h2>
+
+<div id="result" class="mb-3" style="display:none; width: 100%; max-width: 600px;">
+    <p>Ссылка для жюри:</p>
+    <input type="text" id="juryLink" readonly class="form-control" style="width:100%; overflow-x:auto; text-overflow:ellipsis; white-space:nowrap;">
+</div>
+
+<button id="generateBtn" class="btn btn-primary" style="width:100%; max-width:600px;">Сгенерировать ссылку</button>
+
+<script>
+const btn = document.getElementById("generateBtn");
+const resultDiv = document.getElementById("result");
+const juryLinkInput = document.getElementById("juryLink");
+
+btn.addEventListener("click", () => {
+    fetch("{% url 'generate_jury_token_ajax' %}", {
+        method: "POST",
+        headers: {
+            "X-CSRFToken": "{{ csrf_token }}",
+            "Content-Type": "application/json"
+        },
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.link) {
+            juryLinkInput.value = data.link;
+            resultDiv.style.display = "block";
+
+            // копируем в буфер
+            juryLinkInput.select();
+            juryLinkInput.setSelectionRange(0, 99999);
+            document.execCommand("copy");
+
+            // уведомление
+            let msg = document.createElement("div");
+            msg.textContent = "Ссылка сгенерирована и скопирована в буфер!";
+            msg.style.position = "fixed";
+            msg.style.bottom = "20px";
+            msg.style.right = "20px";
+            msg.style.backgroundColor = "#28a745";
+            msg.style.color = "#fff";
+            msg.style.padding = "10px 15px";
+            msg.style.borderRadius = "5px";
+            msg.style.boxShadow = "0 2px 6px rgba(0,0,0,0.3)";
+            document.body.appendChild(msg);
+
+            setTimeout(() => { msg.remove(); }, 3000);
+        }
+    });
+});
+</script>
+{% endblock %}

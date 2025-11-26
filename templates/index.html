@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>{{ award_config.name }}</h1>
+
+{% if award_config.description %}
+    <p>{{ award_config.description }}</p>
+{% endif %}
+
+{% if main_categories %}
+    <h2>Основные категории</h2>
+    <ul>
+    {% for category in main_categories %}
+        <li>
+            <strong>{{ category.name }}</strong>
+            {% if category.description %}
+                <p>{{ category.description }}</p>
+            {% endif %}
+        </li>
+    {% endfor %}
+    </ul>
+{% endif %}
+
+<p>Текущий этап премии: <strong>{{ award_config.get_current_stage_display }}</strong></p>
+
+{% if current_stage != 'finished' and current_stage != 'results' %}
+    {% if not request.user.is_authenticated %}
+        <a href="{% url 'login' %}?next={% url 'index' %}" class="btn btn-primary btn-lg mt-3">Голосовать</a>
+    {% else %}
+        <a href="{% if current_stage == 'suggest_cat' %}{% url 'suggest_category' %}
+                  {% elif current_stage == 'suggest_nominee' or current_stage == 'voting' %}{% url 'categories_list' %}{% endif %}"
+           class="btn btn-primary btn-lg mt-3">Голосовать</a>
+    {% endif %}
+{% elif current_stage == 'finished' %}
+    <p class="mt-3">Текущий этап завершён. Ожидайте подсчёта голосов.</p>
+{% elif current_stage == 'results' %}
+    <a href="{% url 'results_public' %}" class="btn btn-success btn-lg mt-3">Посмотреть результаты</a>
+{% endif %}
+{% endblock %}

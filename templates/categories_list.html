@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Категории</h1>
+
+{% if current_stage == 'suggest_nominee' %}
+    <p>Этап предложения номинантов</p>
+{% elif current_stage == 'voting' %}
+    <p>Этап голосования</p>
+{% elif current_stage == 'finished' %}
+    <p>Этап проверки админов</p>
+{% elif current_stage == 'results' %}
+    <p>Публичные результаты после награждения</p>
+{% endif %}
+
+<ul>
+{% for category in categories %}
+    <li>
+        <strong>{{ category.name }}</strong>
+
+        {% if current_stage == 'suggest_nominee' %}
+            <a href="{% url 'suggest_nominee' category.id %}" class="btn btn-primary">
+                Предложить номинанта
+            </a>
+        {% elif current_stage == 'voting' %}
+            <a href="{% url 'vote' category.id %}" class="btn btn-success">
+                Голосовать
+            </a>
+        {% endif %}
+    </li>
+{% endfor %}
+</ul>
+
+{% endblock %}

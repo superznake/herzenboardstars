@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Результаты голосования (только админ)</h2>
+{% for cat_data in results_data %}
+    <h4 class="mt-4">{{ cat_data.category.name }}</h4>
+    {% if cat_data.results %}
+        <table class="table table-bordered">
+            <thead>
+                <tr>
+                    <th>Номинант</th>
+                    <th>Голоса жюри</th>
+                    <th>Голоса пользователей</th>
+                    <th>Итоговый балл</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in cat_data.results %}
+                <tr>
+                    <td>{{ r.nominee.name }}</td>
+                    <td>{{ r.jury_votes }}</td>
+                    <td>{{ r.user_votes }}</td>
+                    <td>{{ r.total_score|floatformat:1 }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p>Номинанты не добавлены.</p>
+    {% endif %}
+{% endfor %}
+{% endblock %}

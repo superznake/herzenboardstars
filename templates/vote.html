@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>Голосование за категорию "{{ category.name }}"</h2>
+{% if nominees %}
+    <form method="post" id="voteForm">
+        {% csrf_token %}
+        {% for nominee in nominees %}
+            <div class="form-check">
+                <input class="form-check-input" type="radio" name="nominee" id="nominee{{ nominee.id }}" value="{{ nominee.id }}">
+                <label class="form-check-label" for="nominee{{ nominee.id }}">
+                    {{ nominee.name }}
+                </label>
+            </div>
+        {% endfor %}
+        <button type="submit" id="submitBtn" class="btn btn-primary mt-3" disabled>Проголосовать</button>
+    </form>
+
+    <script>
+        const radios = document.querySelectorAll('input[name="nominee"]');
+        const submitBtn = document.getElementById('submitBtn');
+
+        radios.forEach(radio => {
+            radio.addEventListener('change', () => {
+                submitBtn.disabled = false; // кнопка активируется при выборе
+            });
+        });
+    </script>
+{% else %}
+    <p>В этой категории пока нет номинантов.</p>
+{% endif %}
+{% endblock %}
