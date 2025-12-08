@@ -1,6 +1,6 @@
 from django.conf import settings
 from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth import login
+from django.contrib.auth import login, get_backends
 from django.contrib.auth.models import User
 from django.http import JsonResponse, HttpResponseForbidden, HttpResponseBadRequest, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -61,12 +61,16 @@ def vk_oauth_complete(request):
         user.set_unusable_password()
         user.save()
 
-    # создаём профиль только если нет
+    # создаём профиль, если нет
     profile, _ = UserProfile.objects.get_or_create(user=user, defaults={'is_jury': False})
 
-    login(request, user)
-    return redirect('index')
+    # находим нужный backend
+    backend = [b for b in get_backends() if b.__class__.__name__ == 'ModelBackend'][0]
 
+    # передаём backend в login
+    login(request, user, backend=backend)
+
+    return redirect('index')
 
 # =========================
 # Предложение номинаций
