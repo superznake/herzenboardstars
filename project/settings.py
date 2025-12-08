@@ -31,7 +31,7 @@ SECRET_KEY = 'django-insecure-_)+1ani$-x6ecgulf)@!wokc-l3-zn3m74&e7dcs+ubw%hqjmj
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['herzenboardstars.lol', 'localhost', '127.0.0.1', '45.130.215.79']
+ALLOWED_HOSTS = ['herzenboardstars.lol', 'localhost', '127.0.0.1', '45.130.215.79', '0.0.0.0']
 
 CSRF_TRUSTED_ORIGINS = [
     "https://herzenboardstars.lol",
