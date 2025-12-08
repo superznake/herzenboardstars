@@ -50,31 +50,21 @@ def vk_login_page(request):
 
 
 def vk_oauth_complete(request):
-    """
-    Обрабатывает callback от VK после OAuth авторизации через VKID.
-    """
     code = request.GET.get('code')
-    device_id = request.GET.get('device_id')  # если используешь VKID OneTap
-
+    device_id = request.GET.get('device_id')
     if not code:
         return HttpResponseBadRequest("Не передан код авторизации VK")
 
-    # Здесь предполагаем, что у тебя есть функция обмена code -> user info
-    # Если используешь VKID SDK на фронтенде, можно отправлять данные через fetch POST
-    # Для примера создадим временного пользователя:
-
-    username = f"vk_{code[:8]}"  # уникальное имя на основе кода
+    username = f"vk_{code[:8]}"
     user, created = User.objects.get_or_create(username=username)
     if created:
         user.set_unusable_password()
         user.save()
-        # создаём профиль
-        UserProfile.objects.create(user=user, is_jury=False)
 
-    # Логиним пользователя
+    # создаём профиль только если нет
+    profile, _ = UserProfile.objects.get_or_create(user=user, defaults={'is_jury': False})
+
     login(request, user)
-
-    # Перенаправляем на главную или текущий этап премии
     return redirect('index')
 
 
