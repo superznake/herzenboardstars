@@ -16,7 +16,7 @@
         redirectUrl: 'https://herzenboardstars.lol/oauth/complete/vk-oauth2/',
         responseMode: VKID.ConfigResponseMode.Callback,
         source: VKID.ConfigSource.LOWCODE,
-        scope: '', // Заполните нужными доступами по необходимости
+        scope: '',
       });
 
       const oneTap = new VKID.OneTap();
@@ -30,17 +30,13 @@
         const code = payload.code;
         const deviceId = payload.device_id;
 
-        VKID.Auth.exchangeCode(code, deviceId)
-          .then(vkidOnSuccess)
-          .catch(vkidOnError);
+        // Перенаправление на Django для обработки OAuth
+        const redirectUrl = '/oauth/complete/vk-oauth2/?code=' + code + '&device_id=' + deviceId;
+        window.location.href = redirectUrl;
       });
 
-      function vkidOnSuccess(data) {
-        // Обработка полученного результата
-      }
-
       function vkidOnError(error) {
-        // Обработка ошибки
+        alert('Ошибка авторизации: ' + (error.message || 'Неизвестная ошибка'));
       }
     }
   </script>
