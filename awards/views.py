@@ -59,8 +59,9 @@ def vk_oauth_complete(request):
     """Обработка редиректа с VK после OAuth"""
     code = request.GET.get("code")
     if not code:
-        return render(request, "registration/login.html", {"error": "Не удалось получить код от VK."})
+        return render(request, "login.html", {"error": "Не удалось получить код от VK."})
 
+    # Обмен кода на access_token
     token_url = "https://oauth.vk.com/access_token"
     params = {
         "client_id": settings.VK_CLIENT_ID,
@@ -70,26 +71,33 @@ def vk_oauth_complete(request):
     }
     resp = requests.get(token_url, params=params)
     data = resp.json()
+    print("VK token response:", data)  # отладка
 
     if "error" in data:
-        return render(request, "registration/login.html", {"error": data.get("error_description", "Ошибка авторизации VK.")})
+        return render(request, "login.html", {"error": data.get("error_description", "Ошибка авторизации VK.")})
 
     vk_user_id = data["user_id"]
     first_name = data.get("first_name", "")
     last_name = data.get("last_name", "")
 
-    # Создаем или получаем пользователя
+    # Получаем или создаём пользователя
     user, created = User.objects.get_or_create(
         username=f"vk_{vk_user_id}",
-        defaults={"first_name": first_name, "last_name": last_name}
+        defaults={
+            "first_name": first_name,
+            "last_name": last_name,
+        }
     )
 
-    # Если профиль не создан
+    # Создаём профиль, если нет
     if not hasattr(user, "userprofile"):
         UserProfile.objects.create(user=user)
 
+    # Логиним с указанием backend
     login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+
     return redirect("index")
+
 
 # =========================
 # Предложение номинаций
