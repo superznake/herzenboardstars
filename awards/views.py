@@ -42,7 +42,7 @@ def index(request):
 
 def vk_login_page(request):
     """Страница с кнопкой VKID"""
-    return render(request, "login.html", {
+    return render(request, "registration/login.html", {
         "VK_CLIENT_ID": settings.VK_CLIENT_ID,
         "VK_REDIRECT_URI": settings.VK_REDIRECT_URI,
     })
@@ -59,7 +59,7 @@ def vk_oauth_complete(request):
     """Обработка редиректа с VK после OAuth"""
     code = request.GET.get("code")
     if not code:
-        return render(request, "login.html", {"error": "Не удалось получить код от VK."})
+        return render(request, "registration/login.html", {"error": "Не удалось получить код от VK."})
 
     token_url = "https://oauth.vk.com/access_token"
     params = {
@@ -72,7 +72,7 @@ def vk_oauth_complete(request):
     data = resp.json()
 
     if "error" in data:
-        return render(request, "login.html", {"error": data.get("error_description", "Ошибка авторизации VK.")})
+        return render(request, "registration/login.html", {"error": data.get("error_description", "Ошибка авторизации VK.")})
 
     vk_user_id = data["user_id"]
     first_name = data.get("first_name", "")
