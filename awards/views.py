@@ -7,7 +7,7 @@ from django.http import JsonResponse, HttpResponseForbidden, HttpResponseBadRequ
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.decorators import login_required
 from django.contrib.admin.views.decorators import staff_member_required
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_POST
 
 from .models import (
     AwardConfig,
@@ -51,7 +51,7 @@ def vk_login_page(request):
     })
 
 
-@require_GET
+@require_POST
 def vk_logout(request):
     """Выход пользователя из системы"""
     logout(request)

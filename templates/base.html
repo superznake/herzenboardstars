@@ -16,7 +16,10 @@
                         <span class="nav-link">Привет, {{ request.user.first_name }}</span>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{% url 'logout' %}">Выйти</a>
+                        <form action="{% url 'logout' %}" method="post">
+                            {% csrf_token %}
+                            <button type="submit">Выйти</button>
+                        </form>
                     </li>
                 {% else %}
                     <li class="nav-item">
