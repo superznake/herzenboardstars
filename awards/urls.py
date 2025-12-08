@@ -14,6 +14,7 @@ urlpatterns = [
     path('auth/login/', views.vk_login_page, name='login'),
     # urls.py
     path('oauth/complete/vk-oauth2/', views.vk_oauth_complete, name='vk_oauth_complete'),
+    path('auth/logout/', views.vk_logout, name='logout'),
 
     # Ссылки на этапы премии
     path('suggest-category/', views.suggest_category, name='suggest_category'),

@@ -1,7 +1,7 @@
 import requests
 from django.conf import settings
 from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth import login, get_backends
+from django.contrib.auth import login, get_backends, logout
 from django.contrib.auth.models import User
 from django.http import JsonResponse, HttpResponseForbidden, HttpResponseBadRequest, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -48,6 +48,12 @@ def vk_login_page(request):
         "VK_CLIENT_ID": settings.VK_CLIENT_ID,
         "VK_REDIRECT_URI": settings.VK_REDIRECT_URI
     })
+
+
+def vk_logout(request):
+    """Выход пользователя из системы"""
+    logout(request)
+    return redirect('index')
 
 
 def vk_oauth_complete(request):
