@@ -3,53 +3,54 @@
 {% block content %}
 <h1>Вход на сайт</h1>
 
-{% if error %}
-  <div class="alert alert-danger">{{ error }}</div>
-{% endif %}
-
 <p>Для доступа к премии войдите через VK:</p>
 
-<div id="vk-login-container">
+<div>
   <script nonce="csp_nonce" src="https://unpkg.com/@vkid/sdk@<3.0.0/dist-sdk/umd/index.js"></script>
   <script nonce="csp_nonce" type="text/javascript">
     if ('VKIDSDK' in window) {
       const VKID = window.VKIDSDK;
 
-      // Настройка приложения VKID
-      VKID.Config.init({
-        app: 54356598,  // ID вашего приложения VK
-        redirectUrl: 'https://herzenboardstars.lol/oauth/complete/vk-oauth2/',
-        responseMode: VKID.ConfigResponseMode.Callback,
-        source: VKID.ConfigSource.LOWCODE,
-        scope: '', // Необходимые права, если нужно
-      });
+      function renderVKButton() {
+        VKID.Config.init({
+          app: 54356598,  // ID вашего VK-приложения
+          redirectUrl: 'https://herzenboardstars.lol/oauth/complete/vk-oauth2/',
+          responseMode: VKID.ConfigResponseMode.Callback,
+          source: VKID.ConfigSource.LOWCODE,
+          scope: '', // нужные права (если нужны)
+        });
 
-      const oneTap = new VKID.OneTap();
+        const oneTap = new VKID.OneTap();
 
-      oneTap.render({
-        container: document.getElementById('vk-login-container'),
-        showAlternativeLogin: true
-      })
-      .on(VKID.WidgetEvents.ERROR, vkidOnError)
-      .on(VKID.OneTapInternalEvents.LOGIN_SUCCESS, function (payload) {
-        const code = payload.code;
-        const deviceId = payload.device_id;
+        oneTap.render({
+          container: document.currentScript.parentElement,
+          showAlternativeLogin: true
+        })
+        .on(VKID.WidgetEvents.ERROR, vkidOnError)
+        .on(VKID.OneTapInternalEvents.LOGIN_SUCCESS, function (payload) {
+          const code = payload.code;
+          const deviceId = payload.device_id;
 
-        VKID.Auth.exchangeCode(code, deviceId)
-          .then(vkidOnSuccess)
-          .catch(vkidOnError);
-      });
+          VKID.Auth.exchangeCode(code, deviceId)
+            .then(vkidOnSuccess)
+            .catch(vkidOnError);
+        });
+      }
 
       function vkidOnSuccess(data) {
-        // После успешного входа можно редиректить на главную
+        // После успешного входа редирект на главную
         window.location.href = '/';
       }
 
       function vkidOnError(error) {
-        alert('Ошибка авторизации VK. Попробуйте ещё раз.');
-        console.error(error);
+        console.error("VKID ошибка:", error);
+        alert("Ошибка авторизации. Попробуйте ещё раз.");
       }
+
+      // Генерируем кнопку при загрузке страницы
+      renderVKButton();
     }
   </script>
 </div>
+
 {% endblock %}

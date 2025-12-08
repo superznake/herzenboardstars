@@ -74,7 +74,8 @@ def vk_oauth_complete(request):
     print("VK token response:", data)  # отладка
 
     if "error" in data:
-        return render(request, "registration/login.html", {"error": data.get("error_description", "Ошибка авторизации VK.")})
+        return render(request, "registration/login.html", {"error": data.get("error_description",
+                                                                             "Ошибка авторизации VK.")})
 
     vk_user_id = data["user_id"]
     first_name = data.get("first_name", "")
