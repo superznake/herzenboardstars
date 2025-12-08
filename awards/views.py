@@ -59,7 +59,7 @@ def vk_oauth_complete(request):
     """Обработка редиректа с VK после OAuth"""
     code = request.GET.get("code")
     if not code:
-        return render(request, "login.html", {"error": "Не удалось получить код от VK."})
+        return render(request, "registration/login.html", {"error": "Не удалось получить код от VK."})
 
     # Обмен кода на access_token
     token_url = "https://oauth.vk.com/access_token"
@@ -74,7 +74,7 @@ def vk_oauth_complete(request):
     print("VK token response:", data)  # отладка
 
     if "error" in data:
-        return render(request, "login.html", {"error": data.get("error_description", "Ошибка авторизации VK.")})
+        return render(request, "registration/login.html", {"error": data.get("error_description", "Ошибка авторизации VK.")})
 
     vk_user_id = data["user_id"]
     first_name = data.get("first_name", "")
