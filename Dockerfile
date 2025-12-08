@@ -10,7 +10,8 @@ COPY . .
 EXPOSE 8000
 
 # При старте контейнера подгружаем .env и запускаем Django
-CMD python manage.py migrate --noinput && \
+CMD python manage.py makemigrations --noinput && \
+    python manage.py migrate --noinput && \
     python manage.py collectstatic --noinput && \
     python create_superuser.py && \
     gunicorn project.wsgi:application --bind 0.0.0.0:8000 --workers 3 --timeout 120
