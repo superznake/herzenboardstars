@@ -131,9 +131,15 @@ USE_TZ = True
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
-STATICFILES_DIRS = [BASE_DIR / "static"]
-STATIC_ROOT = os.path.join(BASE_DIR, 'static')
 STATIC_URL = '/static/'
+
+# Папка, куда collectstatic будет собирать все файлы
+STATIC_ROOT = os.path.join(BASE_DIR, 'static')
+
+# Исходная статика в приложениях (если есть)
+STATICFILES_DIRS = [
+    os.path.join(BASE_DIR, 'awards', 'static'),  # пример
+]
 
 AUTHENTICATION_BACKENDS = (
     'social_core.backends.vk.VKOAuth2',
