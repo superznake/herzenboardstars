@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import login
 from django.contrib.auth.models import User
@@ -37,6 +38,17 @@ def index(request):
     })
 
 
+def vk_login_page(request):
+    """
+    Страница входа через VK.
+    Админ логинится через /admin/, обычные пользователи и жюри через VK.
+    """
+    return render(request, "registration/login.html", {
+        "VK_CLIENT_ID": settings.VK_CLIENT_ID,
+        "VK_REDIRECT_URI": settings.VK_REDIRECT_URI
+    })
+
+
 # =========================
 # Предложение номинаций
 # =========================
@@ -45,6 +57,14 @@ def suggest_category(request):
     award_config = AwardConfig.objects.first()
     if award_config and award_config.current_stage != 'suggest_cat':
         return render(request, "closed.html", {"message": "Этап предложения номинаций закрыт."})
+
+    # ---- Ограничение: не более 2 предложенных категорий ----
+    user_suggestions_count = SuggestedCategory.objects.filter(user=request.user).count()
+    if user_suggestions_count >= 2:
+        return render(request, "closed.html", {
+            "message": "Вы уже предложили максимальное количество номинаций (2)."
+        })
+    # ---------------------------------------------------------
 
     if request.method == 'POST':
         form = SuggestedCategoryForm(request.POST)
@@ -62,14 +82,16 @@ def suggest_category(request):
 # =========================
 # Список категорий
 # =========================
-@login_required
 def categories_list(request):
-    award_config = AwardConfig.objects.first()
-    current_stage = award_config.current_stage if award_config else None
-    categories = Category.objects.all()
+    award = AwardConfig.objects.first()
+
+    main_categories = Category.objects.filter(is_main=True)
+    extra_categories = Category.objects.filter(is_main=False)
+
     return render(request, "categories_list.html", {
-        "categories": categories,
-        "current_stage": current_stage
+        "main_categories": main_categories,
+        "extra_categories": extra_categories,
+        "current_stage": award.current_stage if award else None,
     })
 
 
@@ -80,8 +102,20 @@ def categories_list(request):
 def suggest_nominee(request, category_id):
     category = get_object_or_404(Category, id=category_id)
     award_config = AwardConfig.objects.first()
+
     if award_config and award_config.current_stage != 'suggest_nominee':
         return render(request, "closed.html", {"message": "Этап предложения номинантов закрыт."})
+
+    # 🔥 Проверяем, предлагал ли этот пользователь номинанта в этой категории
+    already = SuggestedNominee.objects.filter(
+        category=category,
+        user=request.user
+    ).exists()
+
+    if already:
+        return render(request, "closed.html", {
+            "message": "Вы уже предложили номинанта в этой категории."
+        })
 
     if request.method == 'POST':
         form = SuggestedNomineeForm(request.POST)
@@ -94,7 +128,10 @@ def suggest_nominee(request, category_id):
     else:
         form = SuggestedNomineeForm()
 
-    return render(request, "suggest_nominee.html", {"form": form, "category": category})
+    return render(request, "suggest_nominee.html", {
+        "form": form,
+        "category": category
+    })
 
 
 # =========================
@@ -102,12 +139,18 @@ def suggest_nominee(request, category_id):
 # =========================
 @login_required
 def vote(request, category_id):
+    # Создаём профиль, если его нет
+    if not hasattr(request.user, 'userprofile'):
+        UserProfile.objects.create(user=request.user)
+
     category = get_object_or_404(Category, id=category_id)
     award_config = AwardConfig.objects.first()
 
+    # Проверка текущего этапа
     if award_config and award_config.current_stage != 'voting':
         return render(request, "closed.html", {"message": "Этап голосования закрыт."})
 
+    # Список номинантов для категории
     nominees = Nominee.objects.filter(category=category)
 
     if request.method == 'POST':
@@ -115,13 +158,15 @@ def vote(request, category_id):
         if nominee_id:
             nominee = get_object_or_404(Nominee, id=nominee_id)
 
-            # обновление существующего голоса
+            # Проверяем, есть ли уже голос пользователя в этой категории
             existing_vote = Vote.objects.filter(user=request.user, nominee__category=category).first()
             if existing_vote:
+                # Обновляем существующий голос
                 existing_vote.nominee = nominee
                 existing_vote.jury = request.user.userprofile.is_jury
                 existing_vote.save()
             else:
+                # Создаём новый голос
                 Vote.objects.create(
                     user=request.user,
                     nominee=nominee,
@@ -212,7 +257,6 @@ def jury_login(request, token):
     token_obj.used = True
     token_obj.save()
     return redirect('index')
-
 
 
 # =========================

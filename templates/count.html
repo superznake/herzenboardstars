@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h1>Подсчёт результатов</h1>
+
+{% if award_config %}
+    <p>Текущий этап: <strong>{{ award_config.get_current_stage_display }}</strong></p>
+{% endif %}
+
+<form method="post">
+    {% csrf_token %}
+
+    {% for cat_data in results_data %}
+        <div class="category-block" style="margin-bottom: 30px; padding: 10px; border: 1px solid #ccc; border-radius: 8px;">
+            <h2>{{ cat_data.category.name }}</h2>
+            <p>{{ cat_data.category.description }}</p>
+
+            <table style="width:100%; border-collapse: collapse; margin-top:10px;">
+                <thead>
+                    <tr>
+                        <th style="border-bottom: 1px solid #ccc; padding: 5px; text-align:left;">Номинант</th>
+                        <th style="border-bottom: 1px solid #ccc; padding: 5px;">Голоса жюри</th>
+                        <th style="border-bottom: 1px solid #ccc; padding: 5px;">Голоса пользователей</th>
+                        <th style="border-bottom: 1px solid #ccc; padding: 5px;">Итоговый счёт</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for result in cat_data.results %}
+                        <tr>
+                            <td style="padding: 5px;">{{ result.nominee.name }}</td>
+                            <td style="padding: 5px; text-align:center;">{{ result.jury_votes }}</td>
+                            <td style="padding: 5px; text-align:center;">{{ result.user_votes }}</td>
+                            <td style="padding: 5px; text-align:center;">{{ result.total_score|floatformat:2 }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% endfor %}
+
+    <button type="submit" class="btn btn-success">Сохранить результаты</button>
+</form>
+{% endblock %}

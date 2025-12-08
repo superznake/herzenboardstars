@@ -1,34 +1,69 @@
 {% extends "base.html" %}
 
 {% block content %}
-<h1>Категории</h1>
+<div class="container mt-5">
 
-{% if current_stage == 'suggest_nominee' %}
-    <p>Этап предложения номинантов</p>
-{% elif current_stage == 'voting' %}
-    <p>Этап голосования</p>
-{% elif current_stage == 'finished' %}
-    <p>Этап проверки админов</p>
-{% elif current_stage == 'results' %}
-    <p>Публичные результаты после награждения</p>
-{% endif %}
+    <h2 class="mb-4">Категории</h2>
 
-<ul>
-{% for category in categories %}
-    <li>
-        <strong>{{ category.name }}</strong>
+    <!-- ОСНОВНЫЕ КАТЕГОРИИ -->
+    <h3 class="mt-4">Основные номинации</h3>
+    <div class="row">
+        {% for category in main_categories %}
+            <div class="col-md-6 mb-4">
+                <div class="card p-3 shadow-sm h-100">
 
-        {% if current_stage == 'suggest_nominee' %}
-            <a href="{% url 'suggest_nominee' category.id %}" class="btn btn-primary">
-                Предложить номинанта
-            </a>
-        {% elif current_stage == 'voting' %}
-            <a href="{% url 'vote' category.id %}" class="btn btn-success">
-                Голосовать
-            </a>
-        {% endif %}
-    </li>
-{% endfor %}
-</ul>
+                    <h4>{{ category.name }}</h4>
 
+                    {% if category.description %}
+                        <p class="text-muted">{{ category.description }}</p>
+                    {% endif %}
+
+                    {% if current_stage == 'suggest_nominee' %}
+                        <a href="{% url 'suggest_nominee' category.id %}" class="btn btn-primary mt-2">
+                            Предложить номинанта
+                        </a>
+                    {% elif current_stage == 'voting' %}
+                        <a href="{% url 'vote' category.id %}" class="btn btn-success mt-2">
+                            Голосовать
+                        </a>
+                    {% endif %}
+
+                </div>
+            </div>
+        {% empty %}
+            <p class="text-muted">Основных категорий нет.</p>
+        {% endfor %}
+    </div>
+
+    <!-- ДОПОЛНИТЕЛЬНЫЕ КАТЕГОРИИ -->
+    <h3 class="mt-5">Дополнительные номинации</h3>
+    <div class="row">
+        {% for category in extra_categories %}
+            <div class="col-md-6 mb-4">
+                <div class="card p-3 shadow-sm h-100 border-secondary">
+
+                    <h4>{{ category.name }}</h4>
+
+                    {% if category.description %}
+                        <p class="text-muted">{{ category.description }}</p>
+                    {% endif %}
+
+                    {% if current_stage == 'suggest_nominee' %}
+                        <a href="{% url 'suggest_nominee' category.id %}" class="btn btn-primary mt-2">
+                            Предложить номинанта
+                        </a>
+                    {% elif current_stage == 'voting' %}
+                        <a href="{% url 'vote' category.id %}" class="btn btn-success mt-2">
+                            Голосовать
+                        </a>
+                    {% endif %}
+
+                </div>
+            </div>
+        {% empty %}
+            <p class="text-muted">Дополнительных категорий нет.</p>
+        {% endfor %}
+    </div>
+
+</div>
 {% endblock %}

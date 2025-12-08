@@ -8,6 +8,7 @@ from django.contrib.auth.models import User
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
+
 # =========================
 # Профиль пользователя — для жюри
 # =========================
@@ -39,9 +40,9 @@ class AwardConfig(models.Model):
 
     STAGE_CHOICES = [
         ('suggest_cat', 'Предложение номинаций'),
-        ('finished', 'Этап проверки админами'),
+        ('finished', 'Проверка администрацией'),
         ('suggest_nominee', 'Предложение номинантов'),
-        ('voting', 'Голосование'),
+        ('voting', 'Итоговое голосование'),
         ('results', 'Публикация результатов после награждения'),
     ]
     current_stage = models.CharField(max_length=30, choices=STAGE_CHOICES, default='suggest_cat')
