@@ -7,45 +7,45 @@
 
 <div id="vk-login-container"></div>
 
-<script src="https://unpkg.com/@vkid/sdk@<3.0.0/dist-sdk/umd/index.js"></script>
-<script type="text/javascript">
-if ('VKIDSDK' in window) {
-    const VKID = window.VKIDSDK;
+<div>
+  <script nonce="csp_nonce" src="https://unpkg.com/@vkid/sdk@<3.0.0/dist-sdk/umd/index.js"></script>
+  <script nonce="csp_nonce" type="text/javascript">
+    if ('VKIDSDK' in window) {
+      const VKID = window.VKIDSDK;
 
-    VKID.Config.init({
-        app: {{ VK_CLIENT_ID }},
-        redirectUrl: '{{ VK_REDIRECT_URI }}',
+      VKID.Config.init({
+        app: 54356598,
+        redirectUrl: 'https://herzenboardstars.lol/oauth/complete/vk-oauth2/',
         responseMode: VKID.ConfigResponseMode.Callback,
         source: VKID.ConfigSource.LOWCODE,
-        scope: 'name',  // для получения first_name и last_name
-    });
+        scope: '', // Заполните нужными доступами по необходимости
+      });
 
-    const oneTap = new VKID.OneTap();
+      const oneTap = new VKID.OneTap();
 
-    oneTap.render({
-        container: document.getElementById('vk-login-container'),
+      oneTap.render({
+        container: document.currentScript.parentElement,
         showAlternativeLogin: true
-    })
-    .on(VKID.WidgetEvents.ERROR, vkidOnError)
-    .on(VKID.OneTapInternalEvents.LOGIN_SUCCESS, function(payload) {
+      })
+      .on(VKID.WidgetEvents.ERROR, vkidOnError)
+      .on(VKID.OneTapInternalEvents.LOGIN_SUCCESS, function (payload) {
         const code = payload.code;
         const deviceId = payload.device_id;
 
         VKID.Auth.exchangeCode(code, deviceId)
-            .then(vkidOnSuccess)
-            .catch(vkidOnError);
-    });
+          .then(vkidOnSuccess)
+          .catch(vkidOnError);
+      });
 
-    function vkidOnSuccess(data) {
-        // Редирект на Django view для завершения авторизации
-        window.location.href = "{{ VK_REDIRECT_URI }}?code=" + data.code + "&device_id=" + data.device_id;
-    }
+      function vkidOnSuccess(data) {
+        // Обработка полученного результата
+      }
 
-    function vkidOnError(error) {
-        console.error("VKID error:", error);
-        alert("Ошибка авторизации: " + JSON.stringify(error));
+      function vkidOnError(error) {
+        // Обработка ошибки
+      }
     }
-}
-</script>
+  </script>
+</div>
 
 {% endblock %}
