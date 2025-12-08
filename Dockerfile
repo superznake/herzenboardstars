@@ -3,7 +3,7 @@ FROM python:3.12-slim
 WORKDIR /app
 
 COPY req.txt .
-RUN pip install --no-cache-dir -r requirements.txt gunicorn python-dotenv
+RUN pip install --no-cache-dir -r req.txt gunicorn python-dotenv
 
 COPY . .
 
