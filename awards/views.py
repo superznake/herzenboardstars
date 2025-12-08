@@ -2,7 +2,7 @@ from django.conf import settings
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import login
 from django.contrib.auth.models import User
-from django.http import JsonResponse, HttpResponseForbidden
+from django.http import JsonResponse, HttpResponseForbidden, HttpResponseBadRequest, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.decorators import login_required
 from django.contrib.admin.views.decorators import staff_member_required
@@ -47,6 +47,35 @@ def vk_login_page(request):
         "VK_CLIENT_ID": settings.VK_CLIENT_ID,
         "VK_REDIRECT_URI": settings.VK_REDIRECT_URI
     })
+
+
+def vk_oauth_complete(request):
+    """
+    Обрабатывает callback от VK после OAuth авторизации через VKID.
+    """
+    code = request.GET.get('code')
+    device_id = request.GET.get('device_id')  # если используешь VKID OneTap
+
+    if not code:
+        return HttpResponseBadRequest("Не передан код авторизации VK")
+
+    # Здесь предполагаем, что у тебя есть функция обмена code -> user info
+    # Если используешь VKID SDK на фронтенде, можно отправлять данные через fetch POST
+    # Для примера создадим временного пользователя:
+
+    username = f"vk_{code[:8]}"  # уникальное имя на основе кода
+    user, created = User.objects.get_or_create(username=username)
+    if created:
+        user.set_unusable_password()
+        user.save()
+        # создаём профиль
+        UserProfile.objects.create(user=user, is_jury=False)
+
+    # Логиним пользователя
+    login(request, user)
+
+    # Перенаправляем на главную или текущий этап премии
+    return redirect('index')
 
 
 # =========================
@@ -231,31 +260,43 @@ def count(request):
 # Авторизация жюри по токену
 # =========================
 def jury_login(request, token):
+    """
+    Авторизация жюри по одноразовому токену через VK.
+    """
     token_obj = get_object_or_404(JuryToken, token=token)
-    if not token_obj.is_valid():
-        return render(request, "token_invalid.html")
 
-    # Создаём пользователя, если ещё не существует
+    # Проверка действительности токена
+    if not token_obj.is_valid():
+        return HttpResponse("Токен недействителен или уже использован.", status=400)
+
+    # Если пользователь ещё не привязан к токену, создаём временного VK-пользователя
     if token_obj.user is None:
-        user = User.objects.create(username=f"jury_{token_obj.token.hex[:8]}")
+        username = f"jury_{token_obj.token.hex[:8]}"
+        user = User.objects.create(username=username)
         user.set_unusable_password()
         user.save()
-
-        profile, _ = UserProfile.objects.get_or_create(user=user)
-        profile.is_jury = True
-        profile.save()
-
+        # профиль с is_jury=True
+        UserProfile.objects.create(user=user, is_jury=True)
         token_obj.user = user
         token_obj.save()
     else:
         user = token_obj.user
-        profile, _ = UserProfile.objects.get_or_create(user=user)
-        profile.is_jury = True
-        profile.save()
+        # Обновляем статус жюри на всякий случай
+        user_profile = getattr(user, 'userprofile', None)
+        if user_profile:
+            user_profile.is_jury = True
+            user_profile.save()
+        else:
+            UserProfile.objects.create(user=user, is_jury=True)
 
+    # Логиним пользователя
     login(request, user)
+
+    # Отмечаем токен как использованный
     token_obj.used = True
     token_obj.save()
+
+    # Редирект на текущий этап премии
     return redirect('index')
 
 
