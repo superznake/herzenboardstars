@@ -67,7 +67,7 @@ def vk_oauth_complete(request):
     # Обмен кода на токен и получение данных пользователя
     token_url = "https://oauth.vk.com/access_token"
     params = {
-        "client_id": settings.VK_APP_ID,
+        "client_id": settings.VK_CLIENT_ID,
         "client_secret": settings.VK_APP_SECRET,
         "redirect_uri": settings.VK_REDIRECT_URI,
         "code": code,
