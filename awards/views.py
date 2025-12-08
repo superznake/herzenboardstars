@@ -1,3 +1,5 @@
+import json
+
 import requests
 from django.conf import settings
 from django.shortcuts import render, redirect, get_object_or_404
@@ -105,6 +107,37 @@ def vk_oauth_complete(request):
     login(request, user, backend='django.contrib.auth.backends.ModelBackend')
 
     return redirect("index")
+
+
+@csrf_exempt
+def vkid_login(request):
+    if request.method != "POST":
+        return JsonResponse({"success": False, "error": "Invalid method"})
+
+    data = json.loads(request.body)
+
+    vk_user_id = data.get("user_id")
+    token_payload = data.get("token_payload") or {}
+
+    if not vk_user_id:
+        return JsonResponse({"success": False, "error": "No user_id"})
+
+    # Имя берём из токена
+    first_name = token_payload.get("first_name", "")
+    last_name = token_payload.get("last_name", "")
+
+    # Создаём или получаем пользователя
+    user, created = User.objects.get_or_create(
+        username=f"vk_{vk_user_id}",
+        defaults={"first_name": first_name}
+    )
+
+    if not hasattr(user, "userprofile"):
+        UserProfile.objects.create(user=user)
+
+    login(request, user)
+
+    return JsonResponse({"success": True})
 
 
 # =========================

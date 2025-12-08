@@ -2,6 +2,7 @@ from django.urls import path
 from django.contrib import admin
 from django.contrib.auth import views as auth_views
 from awards import views
+from awards.views import vkid_login
 
 urlpatterns = [
     # Админка
@@ -9,7 +10,7 @@ urlpatterns = [
 
     # Главная страница
     path('', views.index, name='index'),
-
+    path("auth/vk/login/", vkid_login, name="vkid_login"),
     # VK-логин (страница с кнопкой VK)
     path('auth/login/', views.vk_login_page, name='login'),
     # urls.py

@@ -7,48 +7,73 @@
 
 <div>
   <script nonce="csp_nonce" src="https://unpkg.com/@vkid/sdk@<3.0.0/dist-sdk/umd/index.js"></script>
+
   <script nonce="csp_nonce" type="text/javascript">
-    if ('VKIDSDK' in window) {
+    if ("VKIDSDK" in window) {
       const VKID = window.VKIDSDK;
 
-      function renderVKButton() {
-        VKID.Config.init({
-          app: 54356598,  // ID вашего VK-приложения
-          redirectUrl: 'https://herzenboardstars.lol/oauth/complete/vk-oauth2/',
-          responseMode: VKID.ConfigResponseMode.Callback,
-          source: VKID.ConfigSource.LOWCODE,
-          scope: '', // нужные права (если нужны)
-        });
+      VKID.Config.init({
+        app: 54356598,
+        redirectUrl: "https://herzenboardstars.lol/oauth/complete/vk-oauth2/",
+        responseMode: VKID.ConfigResponseMode.Callback,
+        source: VKID.ConfigSource.LOWCODE,
+        scope: "",
+      });
 
-        const oneTap = new VKID.OneTap();
+      const oneTap = new VKID.OneTap();
 
-        oneTap.render({
+      oneTap
+        .render({
           container: document.currentScript.parentElement,
-          showAlternativeLogin: true
+          showAlternativeLogin: true,
         })
         .on(VKID.WidgetEvents.ERROR, vkidOnError)
-        .on(VKID.OneTapInternalEvents.LOGIN_SUCCESS, function (payload) {
-          const code = payload.code;
-          const deviceId = payload.device_id;
+        .on(
+          VKID.OneTapInternalEvents.LOGIN_SUCCESS,
+          function (payload) {
+            const code = payload.code;
+            const deviceId = payload.device_id;
 
-          VKID.Auth.exchangeCode(code, deviceId)
-            .then(vkidOnSuccess)
-            .catch(vkidOnError);
-        });
-      }
+            // VKID сам обменяет код на токены
+            VKID.Auth.exchangeCode(code, deviceId)
+              .then(vkidOnSuccess)
+              .catch(vkidOnError);
+          }
+        );
 
       function vkidOnSuccess(data) {
-        // После успешного входа редирект на главную
-        window.location.href = '/';
+        console.log("VKID success:", data);
+
+        fetch("/auth/vk/login/", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": getCookie("csrftoken"),
+          },
+          body: JSON.stringify(data),
+        })
+          .then((r) => r.json())
+          .then((res) => {
+            if (res.success) {
+              window.location.href = "/";
+            } else {
+              alert("Ошибка на сервере: " + (res.error || "неизвестная"));
+            }
+          })
+          .catch(() => alert("Ошибка соединения с сервером."));
       }
 
       function vkidOnError(error) {
         console.error("VKID ошибка:", error);
-        alert("Ошибка авторизации. Попробуйте ещё раз.");
+        alert("Ошибка авторизации: " + (error.text || "Неизвестная ошибка"));
       }
 
-      // Генерируем кнопку при загрузке страницы
-      renderVKButton();
+      function getCookie(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2)
+          return parts.pop().split(";").shift();
+      }
     }
   </script>
 </div>
