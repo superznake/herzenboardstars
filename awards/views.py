@@ -1,3 +1,4 @@
+import requests
 from django.conf import settings
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import login, get_backends
@@ -50,23 +51,43 @@ def vk_login_page(request):
 
 
 def vk_oauth_complete(request):
-    code = request.GET.get('code')
+    """Обработка редиректа с VK после OAuth"""
+    code = request.GET.get("code")
     if not code:
-        return HttpResponseBadRequest("Не передан код авторизации VK")
+        return render(request, "login.html", {"error": "Не удалось получить код от VK."})
 
-    username = f"vk_{code[:8]}"
-    user, created = User.objects.get_or_create(username=username)
-    if created:
-        user.set_unusable_password()
-        user.save()
+    # Обмен кода на токен и получение данных пользователя
+    token_url = "https://oauth.vk.com/access_token"
+    params = {
+        "client_id": settings.VK_APP_ID,
+        "client_secret": settings.VK_APP_SECRET,
+        "redirect_uri": settings.VK_REDIRECT_URI,
+        "code": code,
+    }
+    resp = requests.get(token_url, params=params)
+    data = resp.json()
 
-    # создаём профиль, если нет
-    UserProfile.objects.get_or_create(user=user, defaults={'is_jury': False})
+    if "error" in data:
+        return render(request, "login.html", {"error": data.get("error_description", "Ошибка авторизации VK.")})
 
-    # Используем строку backend
-    login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+    vk_user_id = data["user_id"]
+    first_name = data.get("first_name", "")
+    last_name = data.get("last_name", "")
 
-    return redirect('index')
+    # Создаём или получаем пользователя
+    user, created = User.objects.get_or_create(
+        username=f"vk_{vk_user_id}",
+        defaults={
+            "first_name": first_name,
+        }
+    )
+
+    # Если профиль не создан (вдруг)
+    if not hasattr(user, "userprofile"):
+        UserProfile.objects.create(user=user)
+
+    login(request, user)
+    return redirect("index")
 
 # =========================
 # Предложение номинаций
