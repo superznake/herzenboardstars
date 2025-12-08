@@ -51,7 +51,6 @@ def vk_login_page(request):
 
 def vk_oauth_complete(request):
     code = request.GET.get('code')
-    device_id = request.GET.get('device_id')
     if not code:
         return HttpResponseBadRequest("Не передан код авторизации VK")
 
@@ -62,13 +61,10 @@ def vk_oauth_complete(request):
         user.save()
 
     # создаём профиль, если нет
-    profile, _ = UserProfile.objects.get_or_create(user=user, defaults={'is_jury': False})
+    UserProfile.objects.get_or_create(user=user, defaults={'is_jury': False})
 
-    # находим нужный backend
-    backend = [b for b in get_backends() if b.__class__.__name__ == 'ModelBackend'][0]
-
-    # передаём backend в login
-    login(request, user, backend=backend)
+    # Используем строку backend
+    login(request, user, backend='django.contrib.auth.backends.ModelBackend')
 
     return redirect('index')
 
