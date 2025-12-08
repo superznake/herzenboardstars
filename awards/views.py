@@ -56,45 +56,52 @@ def vk_logout(request):
 
 
 def vk_oauth_complete(request):
-    """Обработка редиректа с VK после OAuth"""
+    """Обработка редиректа с VK после OAuth через VKID"""
     code = request.GET.get("code")
     if not code:
-        return render(request, "registration/login.html", {"error": "Не удалось получить код от VK."})
+        return render(request, "registration/login.html", {"error":
+                                                               "Не удалось получить код от VK."})
 
-    # Обмен кода на access_token
+    # Обмен кода на токен доступа
     token_url = "https://oauth.vk.com/access_token"
     params = {
         "client_id": settings.VK_CLIENT_ID,
         "client_secret": settings.VK_APP_SECRET,
-        "redirect_uri": settings.VK_REDIRECT_URI,
+        "redirect_uri": settings.VK_REDIRECT_URI,  # должен совпадать с настройками VK
         "code": code,
     }
-    resp = requests.get(token_url, params=params)
-    data = resp.json()
-    print("VK token response:", data)  # отладка
 
+    try:
+        resp = requests.get(token_url, params=params)
+        data = resp.json()
+    except Exception as e:
+        return render(request, "registration/login.html", {"error": f"Ошибка запроса к VK: {e}"})
+
+    # Проверка на ошибки от VK
     if "error" in data:
-        return render(request, "registration/login.html", {"error": data.get("error_description",
-                                                                             "Ошибка авторизации VK.")})
+        return render(request, "registration/login.html", {"error": f"Ошибка авторизации VK: "
+                                                                    f"{data.get('error_description', data)}"})
 
-    vk_user_id = data["user_id"]
+    vk_user_id = data.get("user_id")
     first_name = data.get("first_name", "")
     last_name = data.get("last_name", "")
 
-    # Получаем или создаём пользователя
+    if not vk_user_id:
+        return render(request, "registration/login.html", {"error":
+                                                               "Не удалось получить ID пользователя VK."})
+
+    # Создание или получение пользователя Django
+    username = f"vk_{vk_user_id}"
     user, created = User.objects.get_or_create(
-        username=f"vk_{vk_user_id}",
-        defaults={
-            "first_name": first_name,
-            "last_name": last_name,
-        }
+        username=username,
+        defaults={"first_name": first_name, "last_name": last_name}
     )
 
-    # Создаём профиль, если нет
+    # Создание профиля, если его нет
     if not hasattr(user, "userprofile"):
         UserProfile.objects.create(user=user)
 
-    # Логиним с указанием backend
+    # Авторизация пользователя
     login(request, user, backend='django.contrib.auth.backends.ModelBackend')
 
     return redirect("index")
