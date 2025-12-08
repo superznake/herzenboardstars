@@ -41,13 +41,10 @@ def index(request):
 
 
 def vk_login_page(request):
-    """
-    Страница входа через VK.
-    Админ логинится через /admin/, обычные пользователи и жюри через VK.
-    """
-    return render(request, "registration/login.html", {
+    """Страница с кнопкой VKID"""
+    return render(request, "login.html", {
         "VK_CLIENT_ID": settings.VK_CLIENT_ID,
-        "VK_REDIRECT_URI": settings.VK_REDIRECT_URI
+        "VK_REDIRECT_URI": settings.VK_REDIRECT_URI,
     })
 
 
@@ -62,9 +59,8 @@ def vk_oauth_complete(request):
     """Обработка редиректа с VK после OAuth"""
     code = request.GET.get("code")
     if not code:
-        return render(request, "registration/login.html", {"error": "Не удалось получить код от VK."})
+        return render(request, "login.html", {"error": "Не удалось получить код от VK."})
 
-    # Обмен кода на токен и получение данных пользователя
     token_url = "https://oauth.vk.com/access_token"
     params = {
         "client_id": settings.VK_CLIENT_ID,
@@ -76,25 +72,23 @@ def vk_oauth_complete(request):
     data = resp.json()
 
     if "error" in data:
-        return render(request, "registration/login.html", {"error": data.get("error_description", "Ошибка авторизации VK.")})
+        return render(request, "login.html", {"error": data.get("error_description", "Ошибка авторизации VK.")})
 
     vk_user_id = data["user_id"]
     first_name = data.get("first_name", "")
     last_name = data.get("last_name", "")
 
-    # Создаём или получаем пользователя
+    # Создаем или получаем пользователя
     user, created = User.objects.get_or_create(
         username=f"vk_{vk_user_id}",
-        defaults={
-            "first_name": first_name,
-        }
+        defaults={"first_name": first_name, "last_name": last_name}
     )
 
-    # Если профиль не создан (вдруг)
+    # Если профиль не создан
     if not hasattr(user, "userprofile"):
         UserProfile.objects.create(user=user)
 
-    login(request, user)
+    login(request, user, backend='django.contrib.auth.backends.ModelBackend')
     return redirect("index")
 
 # =========================
