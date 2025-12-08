@@ -33,6 +33,11 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['herzenboardstars.lol', 'localhost', '127.0.0.1']
 
+CSRF_TRUSTED_ORIGINS = [
+    "https://herzenboardstars.lol",
+    "http://localhost:8000",
+]
+
 
 # Application definition
 
