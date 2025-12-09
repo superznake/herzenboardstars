@@ -1,91 +1,142 @@
 {% extends "base.html" %}
 
 {% block content %}
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Вход через VK</title>
-    <script src="https://unpkg.com/@vkid/sdk@2.2.0/dist-sdk/umd/index.js"></script>
-</head>
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8 text-center">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Загрузка...</span>
+            </div>
+            <h3 class="mt-3">Выполняется вход через VK...</h3>
+            <p class="text-muted">Пожалуйста, подождите</p>
+        </div>
+    </div>
+</div>
 
-<body style="font-family: sans-serif; padding: 20px;">
+<!-- Load VK ID SDK with error handling -->
+<script src="https://unpkg.com/@vkid/sdk@2.2.0/dist-sdk/umd/index.js"></script>
 <script>
-(async () => {
-    // Идентификатор приложения VK ID
-    const APP_ID = 543565598;
+// Check if VK ID SDK is loaded
+if (typeof VKID === 'undefined') {
+    const spinner = document.querySelector('.spinner-border');
+    const statusText = document.querySelector('h3');
+    const subText = document.querySelector('p');
+    
+    if (spinner) {
+        spinner.classList.remove('spinner-border', 'text-primary');
+        spinner.classList.add('text-danger');
+    }
+    if (statusText) statusText.textContent = 'Ошибка загрузки VK ID SDK';
+    if (subText) subText.textContent = 'Пожалуйста, обновите страницу или попробуйте позже';
+    
+    console.error('VK ID SDK не загружен');
+    throw new Error('VK ID SDK не загружен');
+}
 
-    // Настройки SDK
-    VKID.Config.set({
-        app: APP_ID,
-        redirectUrl: window.location.origin + "/oauth/complete/vk-oauth2/",
-        scopes: ["openid", "email", "phone"]
-    });
+// VK ID configuration
+VKID.Config.set({
+    app: {{ VK_APP_ID|default:54356598 }},
+    redirectUrl: window.location.origin + "{{ request.path }}",
+    scopes: ["openid", "email", "phone"]
+});
 
-    // Ищем code в URL — VK его передал после редиректа
+async function handleVKAuth() {
     const urlParams = new URLSearchParams(window.location.search);
-    const code = urlParams.get("code");
+    const code = urlParams.get('code');
+    const state = urlParams.get('state');
+    const spinner = document.querySelector('.spinner-border');
+    const statusText = document.querySelector('h3');
+    const subText = document.querySelector('p');
+
+    function showError(message) {
+        const container = document.querySelector('.container');
+        if (!container) return;
+        
+        container.innerHTML = `
+            <div class="row justify-content-center">
+                <div class="col-md-8">
+                    <div class="alert alert-danger" role="alert">
+                        <h4 class="alert-heading">Ошибка авторизации</h4>
+                        <p>${message}</p>
+                        <hr>
+                        <p class="mb-0">
+                            <a href="{% url 'login' %}" class="btn btn-primary">Вернуться на страницу входа</a>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
 
     if (!code) {
-        document.body.innerHTML = "<h2>Ошибка: отсутствует код VK</h2>";
+        showError('Отсутствует код авторизации VK');
         return;
     }
 
     try {
-        // 1️⃣ Обмениваем code на токены
-        const exchangeResult = await VKID.Auth.exchangeCode(code);
-
+        // 1. Exchange code for tokens
+        const exchangeResult = await VKID.Auth.exchangeCode(code, state);
+        
         if (!exchangeResult || !exchangeResult.access_token) {
-            throw new Error("Токены не получены");
+            throw new Error('Не удалось получить токен доступа');
         }
 
-        const accessToken = exchangeResult.access_token;
-
-        // 2️⃣ Получаем данные пользователя ОФИЦИАЛЬНЫМ способом OIDC
+        // 2. Get user info
         const userInfo = await fetch("https://id.vk.com/oauth2/user_info", {
             method: "GET",
             headers: {
-                "Authorization": "Bearer " + accessToken
+                "Authorization": "Bearer " + exchangeResult.access_token
             }
         }).then(r => r.json());
 
         if (!userInfo || !userInfo.sub) {
             console.error("VK userinfo response:", userInfo);
-            document.body.innerHTML = "<h2>Ошибка: данные пользователя не получены</h2>";
-            return;
+            throw new Error('Не удалось получить данные пользователя');
         }
 
-        // 3️⃣ Передаём данные пользователя в Django
-        const backendResponse = await fetch(window.location.pathname, {
+        // 3. Send data to backend
+        const response = await fetch("{{ request.path }}", {
             method: "POST",
-            headers: {"Content-Type": "application/json"},
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": "{{ csrf_token }}"
+            },
             body: JSON.stringify({
                 vk_id: userInfo.sub,
                 first_name: userInfo.given_name || "",
                 last_name: userInfo.family_name || "",
                 email: userInfo.email || "",
-                access_token: accessToken,
-                refresh_token: exchangeResult.refresh_token || null,
-                id_token: exchangeResult.id_token || null
+                access_token: exchangeResult.access_token
             })
-        }).then(r => r.json());
+        });
 
-        // 4️⃣ Проверяем успех
-        if (backendResponse.success) {
-            window.location.href = backendResponse.redirect || "/";
-        } else {
-            console.error("Server error:", backendResponse);
-            document.body.innerHTML =
-                "<h2>Ошибка на стороне сервера</h2><pre>" + JSON.stringify(backendResponse, null, 2) + "</pre>";
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.error || 'Ошибка сервера');
         }
 
-    } catch (e) {
-        console.error("VK Auth Exception:", e);
-        document.body.innerHTML = `<h2>Ошибка авторизации VK</h2><pre>${e}</pre>`;
+        // 4. Redirect on success
+        const result = await response.json();
+        if (result.redirect) {
+            window.location.href = result.redirect;
+        } else {
+            window.location.href = "/";
+        }
+
+    } catch (error) {
+        console.error('VK Auth Error:', error);
+        showError(error.message || 'Произошла ошибка при авторизации');
     }
-})();
+}
+
+// Start the authentication process when the page loads
+document.addEventListener('DOMContentLoaded', handleVKAuth);
 </script>
 
-<h3>Выполняется вход через VK...</h3>
-
-</body>
+<style>
+.spinner-border {
+    width: 3rem;
+    height: 3rem;
+}
+</style>
 {% endblock %}
