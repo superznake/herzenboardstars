@@ -363,10 +363,35 @@ def count(request):
         nominees = Nominee.objects.filter(category=category)
         category_results = []
 
+        # Calculate total votes in this category for normalization
+        total_jury_votes_in_category = Vote.objects.filter(
+            nominee__category=category, 
+            jury=True
+        ).count()
+        total_user_votes_in_category = Vote.objects.filter(
+            nominee__category=category, 
+            jury=False
+        ).count()
+
         for nominee in nominees:
             jury_votes = nominee.vote_set.filter(jury=True).count()
             user_votes = nominee.vote_set.filter(jury=False).count()
-            total_score = jury_votes * jury_weight + user_votes * user_weight
+            
+            # Calculate weighted score:
+            # - Jury votes contribute 30% of total weight (distributed proportionally)
+            # - User votes contribute 70% of total weight (distributed proportionally)
+            jury_contribution = 0.0
+            user_contribution = 0.0
+            
+            if total_jury_votes_in_category > 0:
+                # This nominee's share of jury votes * 30% weight
+                jury_contribution = (jury_votes / total_jury_votes_in_category) * jury_weight
+            
+            if total_user_votes_in_category > 0:
+                # This nominee's share of user votes * 70% weight
+                user_contribution = (user_votes / total_user_votes_in_category) * user_weight
+            
+            total_score = jury_contribution + user_contribution
 
             category_results.append({
                 'nominee': nominee,
