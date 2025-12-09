@@ -11,15 +11,15 @@
 
 <p>Для доступа к премии войдите через VK:</p>
 
-<div id="vk-auth-container">
-  <script src="https://unpkg.com/@vkid/sdk@2.0.0/dist-sdk/umd/index.js"></script>
+<div>
+  <script src="https://unpkg.com/@vkid/sdk@<3.0.0/dist-sdk/umd/index.js"></script>
   <script type="text/javascript">
     if ('VKIDSDK' in window) {
       const VKID = window.VKIDSDK;
 
       VKID.Config.init({
         app: {{ VK_APP_ID|default:"54356598" }},
-        redirectUrl: '{{ VK_REDIRECT_URI|default:"" }}',
+        redirectUrl: '{{ VK_REDIRECT_URI|default:"https://herzenboardstars.lol/oauth/complete/vk-oauth2/" }}',
         responseMode: VKID.ConfigResponseMode.Callback,
         source: VKID.ConfigSource.LOWCODE,
         scope: '',
@@ -28,7 +28,7 @@
       const oneTap = new VKID.OneTap();
 
       oneTap.render({
-        container: document.getElementById('vk-auth-container'),
+        container: document.currentScript.parentElement,
         showAlternativeLogin: true
       })
       .on(VKID.WidgetEvents.ERROR, vkidOnError)
@@ -64,14 +64,16 @@
       }
 
       function vkidOnError(error) {
-        const errorMsg = error?.text || error?.message || 'неизвестная ошибка';
+        const errorMsg = error?.text || error?.message || error?.error_description || 'неизвестная ошибка';
         alert('Ошибка авторизации: ' + errorMsg);
         console.error('VKID ошибка:', error);
       }
     } else {
       console.error('VKID SDK не загружен');
-      document.getElementById('vk-auth-container').innerHTML = 
-        '<p class="text-danger">Не удалось загрузить VK ID SDK. Попробуйте обновить страницу.</p>';
+      const container = document.currentScript ? document.currentScript.parentElement : document.querySelector('div');
+      if (container) {
+        container.innerHTML = '<p class="text-danger">Не удалось загрузить VK ID SDK. Попробуйте обновить страницу.</p>';
+      }
     }
   </script>
 </div>
