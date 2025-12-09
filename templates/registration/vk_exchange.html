@@ -1,135 +1,91 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div style="text-align: center; padding: 50px 20px;">
-    <h2>Обработка авторизации...</h2>
-    <p id="status-message">Инициализация VK ID SDK...</p>
-    <div id="error-message" style="display: none; color: red; margin-top: 20px; padding: 15px; background: #ffe6e6; border-radius: 5px;"></div>
-</div>
-<script src="https://unpkg.com/@vkid/sdk@<3.0.0/dist-sdk/umd/index.js"></script>
-<script type="text/javascript">
-  console.log('VK Exchange page loaded');
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Вход через VK</title>
+    <script src="https://unpkg.com/@vkid/sdk@2.2.0/dist-sdk/umd/index.js"></script>
+</head>
 
-  function updateStatus(message) {
-    const el = document.getElementById('status-message');
-    if (el) el.textContent = message;
-    console.log(message);
-  }
+<body style="font-family: sans-serif; padding: 20px;">
+<script>
+(async () => {
+    // Идентификатор приложения VK ID
+    const APP_ID = 543565598;
 
-  function showError(message) {
-    const el = document.getElementById('error-message');
-    if (el) {
-      el.textContent = message;
-      el.style.display = 'block';
+    // Настройки SDK
+    VKID.Config.set({
+        app: APP_ID,
+        redirectUrl: window.location.origin + "/oauth/complete/vk-oauth2/",
+        scopes: ["openid", "email", "phone"]
+    });
+
+    // Ищем code в URL — VK его передал после редиректа
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get("code");
+
+    if (!code) {
+        document.body.innerHTML = "<h2>Ошибка: отсутствует код VK</h2>";
+        return;
     }
-    console.error(message);
-  }
-
-  function performExchange() {
-    if (!('VKIDSDK' in window)) {
-      updateStatus('VKID SDK не загружен, ожидание...');
-      setTimeout(performExchange, 150);
-      return;
-    }
-
-    updateStatus('VKID SDK загружен, инициализация...');
-
-    const VKID = window.VKIDSDK;
 
     try {
-      VKID.Config.init({
-        app: {{ VK_APP_ID|default:"54356598" }},
-        redirectUrl: '{{ VK_REDIRECT_URI|default:"https://herzenboardstars.lol/oauth/complete/vk-oauth2/" }}',
-        responseMode: VKID.ConfigResponseMode.Callback,
-        source: VKID.ConfigSource.LOWCODE,
-        scope: '',
-      });
-      updateStatus('Конфигурация SDK инициализирована');
+        // 1️⃣ Обмениваем code на токены
+        const exchangeResult = await VKID.Auth.exchangeCode(code);
+
+        if (!exchangeResult || !exchangeResult.access_token) {
+            throw new Error("Токены не получены");
+        }
+
+        const accessToken = exchangeResult.access_token;
+
+        // 2️⃣ Получаем данные пользователя ОФИЦИАЛЬНЫМ способом OIDC
+        const userInfo = await fetch("https://id.vk.com/oauth2/user_info", {
+            method: "GET",
+            headers: {
+                "Authorization": "Bearer " + accessToken
+            }
+        }).then(r => r.json());
+
+        if (!userInfo || !userInfo.sub) {
+            console.error("VK userinfo response:", userInfo);
+            document.body.innerHTML = "<h2>Ошибка: данные пользователя не получены</h2>";
+            return;
+        }
+
+        // 3️⃣ Передаём данные пользователя в Django
+        const backendResponse = await fetch(window.location.pathname, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                vk_id: userInfo.sub,
+                first_name: userInfo.given_name || "",
+                last_name: userInfo.family_name || "",
+                email: userInfo.email || "",
+                access_token: accessToken,
+                refresh_token: exchangeResult.refresh_token || null,
+                id_token: exchangeResult.id_token || null
+            })
+        }).then(r => r.json());
+
+        // 4️⃣ Проверяем успех
+        if (backendResponse.success) {
+            window.location.href = backendResponse.redirect || "/";
+        } else {
+            console.error("Server error:", backendResponse);
+            document.body.innerHTML =
+                "<h2>Ошибка на стороне сервера</h2><pre>" + JSON.stringify(backendResponse, null, 2) + "</pre>";
+        }
+
     } catch (e) {
-      showError('Ошибка инициализации SDK: ' + e.message);
-      console.error('Config init failed:', e);
-      setTimeout(() => window.location.href = '/auth/login/', 3000);
-      return;
+        console.error("VK Auth Exception:", e);
+        document.body.innerHTML = `<h2>Ошибка авторизации VK</h2><pre>${e}</pre>`;
     }
-
-    const code = '{{ code }}';
-    const deviceId = '{{ device_id }}';
-
-    if (!code || !deviceId) {
-      showError('Отсутствует код авторизации или device_id');
-      setTimeout(() => window.location.href = '/auth/login/', 3000);
-      return;
-    }
-
-    updateStatus('Обмен кода на токен...');
-    console.log('Exchange start:', code.substring(0, 20) + '...', 'deviceId:', deviceId);
-
-    VKID.Auth.exchangeCode(code, deviceId)
-      .then((tokenData) => {
-        console.log('Exchange success:', tokenData);
-
-        // VK ID SDK уже умеет возвращать данные пользователя, иногда они лежат в tokenData.user
-        let user = tokenData.user || null;
-
-        if (!user) {
-          // fallback если структура другая
-          const data = tokenData.data || tokenData.response || tokenData;
-          user = data?.user || data?.profile || null;
-        }
-
-        if (!user) {
-          showError('Ошибка: данные пользователя не получены. Ответ: ' + JSON.stringify(tokenData));
-          console.error('User object missing:', tokenData);
-          setTimeout(() => window.location.href = '/auth/login/', 5000);
-          return;
-        }
-
-        const userId = user.id || user.user_id || user.uid;
-        const firstName = user.first_name || user.firstName || '';
-        const lastName = user.last_name || user.lastName || '';
-
-        if (!userId) {
-          showError('Ошибка: нет user_id в ответе.');
-          setTimeout(() => window.location.href = '/auth/login/', 5000);
-          return;
-        }
-
-        updateStatus('Авторизация завершена, отправка данных на сервер...');
-
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = '/oauth/complete/vk-oauth2/';
-
-        function addField(name, value) {
-          const input = document.createElement('input');
-          input.type = 'hidden';
-          input.name = name;
-          input.value = value;
-          form.appendChild(input);
-        }
-
-        addField('user_id', userId);
-        addField('first_name', firstName);
-        addField('last_name', lastName);
-
-        addField('csrfmiddlewaretoken', '{{ csrf_token }}');
-
-        document.body.appendChild(form);
-        console.log('Submitting form with:', { userId, firstName, lastName });
-        form.submit();
-      })
-      .catch((error) => {
-        const msg = 'Ошибка обмена кода: ' + (error?.text || error?.message || 'неизвестная ошибка');
-        showError(msg);
-        console.error('exchangeCode error:', error);
-        setTimeout(() => window.location.href = '/auth/login/', 5000);
-      });
-  }
-
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => setTimeout(performExchange, 400));
-  } else {
-    setTimeout(performExchange, 400);
-  }
+})();
 </script>
+
+<h3>Выполняется вход через VK...</h3>
+
+</body>
 {% endblock %}
