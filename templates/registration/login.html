@@ -5,17 +5,17 @@
 
 <p>Для доступа к премии войдите через VK:</p>
 
-<div>
+<div id="vk_button">
   <script nonce="csp_nonce" src="https://unpkg.com/@vkid/sdk@<3.0.0/dist-sdk/umd/index.js"></script>
 
-  <script nonce="csp_nonce" type="text/javascript">
+  <script nonce="csp_nonce">
     if ("VKIDSDK" in window) {
       const VKID = window.VKIDSDK;
 
       VKID.Config.init({
         app: 54356598,
-        redirectUrl: "https://herzenboardstars.lol/oauth/complete/vk-oauth2/",
-        responseMode: VKID.ConfigResponseMode.Callback,
+        // ВАЖНО: ничего не редиректим!
+        responseMode: VKID.ConfigResponseMode.OneTap,
         source: VKID.ConfigSource.LOWCODE,
         scope: "",
       });
@@ -24,25 +24,14 @@
 
       oneTap
         .render({
-          container: document.currentScript.parentElement,
-          showAlternativeLogin: true,
+          container: document.getElementById("vk_button"),
+          showAlternativeLogin: true
         })
         .on(VKID.WidgetEvents.ERROR, vkidOnError)
-        .on(
-          VKID.OneTapInternalEvents.LOGIN_SUCCESS,
-          function (payload) {
-            const code = payload.code;
-            const deviceId = payload.device_id;
+        .on(VKID.WidgetEvents.LOGIN_SUCCESS, vkidOnSuccess);
 
-            // VKID сам обменяет код на токены
-            VKID.Auth.exchangeCode(code, deviceId)
-              .then(vkidOnSuccess)
-              .catch(vkidOnError);
-          }
-        );
-
-      function vkidOnSuccess(data) {
-        console.log("VKID success:", data);
+      function vkidOnSuccess(payload) {
+        console.log("VKID success:", payload);
 
         fetch("/auth/vk/login/", {
           method: "POST",
@@ -50,29 +39,24 @@
             "Content-Type": "application/json",
             "X-CSRFToken": getCookie("csrftoken"),
           },
-          body: JSON.stringify(data),
+          body: JSON.stringify(payload),
         })
-          .then((r) => r.json())
-          .then((res) => {
-            if (res.success) {
-              window.location.href = "/";
-            } else {
-              alert("Ошибка на сервере: " + (res.error || "неизвестная"));
-            }
-          })
-          .catch(() => alert("Ошибка соединения с сервером."));
+        .then(r => r.json())
+        .then(data => {
+          if (data.success) window.location.href = "/";
+          else alert("Ошибка: " + data.error);
+        });
       }
 
-      function vkidOnError(error) {
-        console.error("VKID ошибка:", error);
-        alert("Ошибка авторизации: " + (error.text || "Неизвестная ошибка"));
+      function vkidOnError(e) {
+        console.error("VKID ошибка:", e);
+        alert("Ошибка авторизации: " + (e.text || "Неизвестная ошибка"));
       }
 
       function getCookie(name) {
         const value = `; ${document.cookie}`;
         const parts = value.split(`; ${name}=`);
-        if (parts.length === 2)
-          return parts.pop().split(";").shift();
+        if (parts.length === 2) return parts.pop().split(";").shift();
       }
     }
   </script>
