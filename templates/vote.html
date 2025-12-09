@@ -6,9 +6,9 @@
     <form method="post" id="voteForm">
         {% csrf_token %}
         {% for nominee in nominees %}
-            <div class="form-check custom-radio">
-                <input class="form-check-input" type="radio" name="nominee" id="nominee{{ nominee.id }}" value="{{ nominee.id }}">
-                <label class="form-check-label" for="nominee{{ nominee.id }}">
+            <div class="custom-control custom-radio">
+                <input class="custom-control-input" type="radio" name="nominee" id="nominee{{ nominee.id }}" value="{{ nominee.id }}">
+                <label class="custom-control-label" for="nominee{{ nominee.id }}">
                     {{ nominee.name }}
                 </label>
             </div>
