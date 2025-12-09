@@ -63,6 +63,25 @@ def vk_logout(request):
 @csrf_exempt  # CSRF проверка через токен, но можно временно отключить для теста
 def vk_oauth_complete(request):
     """Обработка редиректа с VK после OAuth через OneTap"""
+    
+    # Поддерживаем как POST (из формы), так и GET (прямой редирект от VK)
+    if request.method == "GET":
+        # Если это GET запрос, возможно это редирект от VK с кодом в query string
+        code = request.GET.get("code")
+        if code:
+            # Создаём POST запрос через JavaScript редирект
+            from django.middleware.csrf import get_token
+            csrf_token = get_token(request)
+            return render(request, "registration/vk_redirect.html", {
+                "code": code,
+                "csrf_token": csrf_token,
+            })
+        else:
+            return render(request, "registration/login.html", {
+                "error": "Код авторизации не получен.",
+                "VK_APP_ID": settings.VK_CLIENT_ID,
+                "VK_REDIRECT_URI": settings.VK_REDIRECT_URI,
+            })
 
     if request.method != "POST":
         return render(request, "registration/login.html", {

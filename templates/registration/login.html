@@ -33,16 +33,11 @@
       })
       .on(VKID.WidgetEvents.ERROR, vkidOnError)
       .on(VKID.OneTapInternalEvents.LOGIN_SUCCESS, function (payload) {
+        // Отправляем код напрямую на сервер, без обмена на клиенте
         const code = payload.code;
         const deviceId = payload.device_id;
 
-        VKID.Auth.exchangeCode(code, deviceId)
-          .then(vkidOnSuccess)
-          .catch(vkidOnError);
-      });
-
-      function vkidOnSuccess(data) {
-        // При успешной авторизации отправляем код на Django
+        // Отправляем код на сервер для обмена на токен
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = '/oauth/complete/vk-oauth2/';
@@ -50,8 +45,14 @@
         const codeInput = document.createElement('input');
         codeInput.type = 'hidden';
         codeInput.name = 'code';
-        codeInput.value = data.code;
+        codeInput.value = code;
         form.appendChild(codeInput);
+
+        const deviceIdInput = document.createElement('input');
+        deviceIdInput.type = 'hidden';
+        deviceIdInput.name = 'device_id';
+        deviceIdInput.value = deviceId;
+        form.appendChild(deviceIdInput);
 
         const csrfInput = document.createElement('input');
         csrfInput.type = 'hidden';
@@ -61,7 +62,7 @@
 
         document.body.appendChild(form);
         form.submit();
-      }
+      });
 
       function vkidOnError(error) {
         const errorMsg = error?.text || error?.message || error?.error_description || 'неизвестная ошибка';
