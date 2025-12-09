@@ -80,6 +80,8 @@ def vk_oauth_complete(request):
                 "code": code,
                 "device_id": request.GET.get("device_id", ""),
                 "csrf_token": request.META.get("CSRF_COOKIE", ""),
+                "VK_APP_ID": settings.VK_CLIENT_ID,
+                "VK_REDIRECT_URI": settings.VK_REDIRECT_URI,
             })
         else:
             logger.info("VK Auth: GET request to oauth endpoint, redirecting to login")

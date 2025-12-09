@@ -1,18 +1,39 @@
 {% extends "base.html" %}
 
 {% block content %}
-<p>Обработка авторизации...</p>
+<div style="text-align: center; padding: 50px 20px;">
+    <h2>Обработка авторизации...</h2>
+    <p id="status-message">Инициализация VK ID SDK...</p>
+    <div id="error-message" style="display: none; color: red; margin-top: 20px; padding: 15px; background: #ffe6e6; border-radius: 5px;"></div>
+</div>
 <script src="https://unpkg.com/@vkid/sdk@<3.0.0/dist-sdk/umd/index.js"></script>
 <script type="text/javascript">
   console.log('VK Exchange page loaded');
   
+  function updateStatus(message) {
+    const statusEl = document.getElementById('status-message');
+    if (statusEl) statusEl.textContent = message;
+    console.log(message);
+  }
+
+  function showError(message) {
+    const errorEl = document.getElementById('error-message');
+    if (errorEl) {
+      errorEl.textContent = message;
+      errorEl.style.display = 'block';
+    }
+    console.error(message);
+  }
+
   // Инициализируем SDK перед использованием
   function performExchange() {
     if (!('VKIDSDK' in window)) {
-      console.log('VKID SDK не загружен, ожидание...');
+      updateStatus('VKID SDK не загружен, ожидание...');
       setTimeout(performExchange, 100);
       return;
     }
+    
+    updateStatus('VKID SDK загружен, инициализация...');
 
     const VKID = window.VKIDSDK;
     
@@ -25,14 +46,28 @@
         source: VKID.ConfigSource.LOWCODE,
         scope: '',
       });
-      console.log('VKID SDK initialized');
+      updateStatus('Конфигурация SDK инициализирована');
     } catch (e) {
+      showError('Ошибка инициализации SDK: ' + e.message);
       console.error('Failed to init VKID Config:', e);
+      setTimeout(function() {
+        window.location.href = '/auth/login/';
+      }, 3000);
+      return;
     }
 
     const code = '{{ code }}';
     const deviceId = '{{ device_id }}';
 
+    if (!code || !deviceId) {
+      showError('Отсутствует код авторизации или device_id');
+      setTimeout(function() {
+        window.location.href = '/auth/login/';
+      }, 3000);
+      return;
+    }
+
+    updateStatus('Обмен кода на токен...');
     console.log('Starting code exchange, code:', code.substring(0, 20) + '...', 'deviceId:', deviceId);
 
     // Используем SDK для обмена кода
@@ -64,14 +99,16 @@
         console.log('Extracted token:', accessToken ? 'present' : 'missing', 'user_id:', userId);
 
         if (!accessToken || !userId) {
+          const errorMsg = 'Ошибка: не удалось получить токен от VK. Полный ответ: ' + JSON.stringify(tokenData);
+          showError(errorMsg);
           console.error('Missing token or user_id. Full response:', tokenData);
-          alert('Ошибка: не удалось получить токен от VK. Проверьте консоль для деталей.');
           setTimeout(function() {
             window.location.href = '/auth/login/';
-          }, 3000);
+          }, 5000);
           return;
         }
 
+        updateStatus('Получение информации о пользователе...');
         // Получаем информацию о пользователе на клиенте (чтобы избежать проблем с IP)
         console.log('Fetching user info from VK API...');
         const vkApiUrl = 'https://api.vk.com/method/users.get';
@@ -90,20 +127,21 @@
             console.log('VK API response:', vkData);
             
             if (vkData.error) {
+              const errorMsg = 'Ошибка VK API: ' + (vkData.error.error_msg || 'Неизвестная ошибка');
+              showError(errorMsg);
               console.error('VK API error:', vkData.error);
-              alert('Ошибка при получении данных пользователя: ' + (vkData.error.error_msg || 'Неизвестная ошибка'));
               setTimeout(function() {
                 window.location.href = '/auth/login/';
-              }, 3000);
+              }, 5000);
               return;
             }
 
             if (!vkData.response || !vkData.response[0]) {
+              showError('Не удалось получить данные пользователя из VK. Ответ: ' + JSON.stringify(vkData));
               console.error('No user data in VK response');
-              alert('Не удалось получить данные пользователя из VK.');
               setTimeout(function() {
                 window.location.href = '/auth/login/';
-              }, 3000);
+              }, 5000);
               return;
             }
 
@@ -112,6 +150,7 @@
             const lastName = vkUser.last_name || '';
 
             console.log('User info retrieved:', firstName, lastName);
+            updateStatus('Завершение авторизации...');
 
             // Отправляем данные пользователя на сервер (без access_token)
             const form = document.createElement('form');
@@ -147,21 +186,22 @@
             form.submit();
           })
           .catch(function(error) {
+            const errorMsg = 'Ошибка соединения с VK: ' + error.message;
+            showError(errorMsg);
             console.error('Error fetching user info:', error);
-            alert('Ошибка соединения с VK: ' + error.message);
             setTimeout(function() {
               window.location.href = '/auth/login/';
-            }, 3000);
+            }, 5000);
           });
       })
       .catch(function(error) {
+        const errorMsg = 'Ошибка обмена кода: ' + (error?.text || error?.message || error?.error_description || 'неизвестная ошибка');
+        showError(errorMsg);
         console.error('VKID exchange error:', error);
-        const errorMsg = error?.text || error?.message || error?.error_description || 'неизвестная ошибка';
         console.error('Error details:', errorMsg, 'Full error:', error);
-        alert('Ошибка авторизации: ' + errorMsg + '\n\nПроверьте консоль браузера для деталей.');
         setTimeout(function() {
           window.location.href = '/auth/login/';
-        }, 3000);
+        }, 5000);
       });
   }
 
