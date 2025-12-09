@@ -10,8 +10,7 @@
     <div class="row">
         {% for category in main_categories %}
             <div class="col-md-6 mb-4">
-                <div class="card p-3 shadow-sm h-100">
-
+                <div class="card p-3 shadow-sm h-100 d-flex flex-column">
                     <h4>{{ category.name }}</h4>
 
                     {% if category.description %}
@@ -19,15 +18,14 @@
                     {% endif %}
 
                     {% if current_stage == 'suggest_nominee' %}
-                        <a href="{% url 'suggest_nominee' category.id %}" class="btn btn-primary mt-2">
+                        <a href="{% url 'suggest_nominee' category.id %}" class="btn btn-primary mt-auto">
                             Предложить номинанта
                         </a>
                     {% elif current_stage == 'voting' %}
-                        <a href="{% url 'vote' category.id %}" class="btn btn-primary mt-2">
+                        <a href="{% url 'vote' category.id %}" class="btn btn-primary mt-auto">
                             Голосовать
                         </a>
                     {% endif %}
-
                 </div>
             </div>
         {% empty %}
