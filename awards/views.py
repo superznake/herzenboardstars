@@ -113,14 +113,15 @@ def vk_oauth_complete(request):
         
         if "error" in vk_data:
             logger.error(f"VK Auth: VK API error: {vk_data.get('error')}")
-            return render(request, "registration/login.html", {"error": "Ошибка при получении данных пользователя из VK."})
+            #return render(request, "registration/login.html", {"error": "Ошибка при получении данных пользователя из VK."})
         
         if not vk_data.get("response"):
             logger.error("VK Auth: No response from VK API")
-            return render(request, "registration/login.html", {"error": "Не удалось получить данные пользователя из VK."})
-        
-        vk_user = vk_data["response"][0]
-        first_name = vk_user.get("first_name", "")
+            vk_user = {"":""}
+            #return render(request, "registration/login.html", {"error": "Не удалось получить данные пользователя из VK."})
+        else:
+            vk_user = vk_data["response"][0]
+        first_name = vk_user.get("first_name", "Гиковец")
         last_name = vk_user.get("last_name", "")
         full_name = f"{first_name} {last_name}".strip() or "Пользователь VK"
         
