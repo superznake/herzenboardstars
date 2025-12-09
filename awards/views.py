@@ -89,11 +89,22 @@ def vk_oauth_complete(request):
     
     # Обработка POST запроса с user_id и user info (после клиентского обмена)
     if request.method != "POST":
-        return render(request, "registration/login.html", {"error": "Неверный метод запроса."})
+        return JsonResponse({"success": False, "error": "Invalid request method"}, status=405)
     
-    user_id = request.POST.get("user_id")
-    first_name = request.POST.get("first_name", "")
-    last_name = request.POST.get("last_name", "")
+    # Check if the request is JSON
+    if request.content_type == 'application/json':
+        try:
+            data = json.loads(request.body)
+            user_id = data.get('vk_id')
+            first_name = data.get('first_name', '')
+            last_name = data.get('last_name', '')
+        except json.JSONDecodeError:
+            return JsonResponse({"success": False, "error": "Invalid JSON data"}, status=400)
+    else:
+        # Fallback to form data
+        user_id = request.POST.get("user_id")
+        first_name = request.POST.get("first_name", "")
+        last_name = request.POST.get("last_name", "")
     
     if not user_id:
         logger.error("VK Auth: Missing user_id in POST request")
@@ -158,7 +169,13 @@ def vk_oauth_complete(request):
         
     except Exception as e:
         logger.error(f"VK Auth: Error creating user: {str(e)}")
+        if request.content_type == 'application/json':
+            return JsonResponse({"success": False, "error": f"Ошибка при создании пользователя: {str(e)}"}, status=500)
         return render(request, "registration/login.html", {"error": f"Ошибка при создании пользователя: {str(e)}"})
+    
+    # Return JSON response for AJAX requests
+    if request.content_type == 'application/json':
+        return JsonResponse({"success": True, "redirect": "/"})
 
 
 @csrf_exempt
