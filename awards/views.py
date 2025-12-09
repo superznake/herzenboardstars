@@ -1,4 +1,5 @@
 import json
+import logging
 
 import requests
 from django.conf import settings
@@ -10,6 +11,8 @@ from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.decorators import login_required
 from django.contrib.admin.views.decorators import staff_member_required
 from django.views.decorators.http import require_GET, require_POST
+
+logger = logging.getLogger(__name__)
 
 from .models import (
     AwardConfig,
@@ -43,16 +46,11 @@ def index(request):
 
 
 def vk_login_page(request):
-    vk_auth_url = (
-        "https://oauth.vk.com/authorize?"
-        f"client_id={settings.VK_CLIENT_ID}"
-        f"&display=page"
-        f"&redirect_uri={settings.VK_REDIRECT_URI}"
-        f"&scope=email"
-        f"&response_type=code"
-        f"&v=5.131"
-    )
-    return redirect(vk_auth_url)
+    """Render login page with VK ID SDK"""
+    return render(request, "registration/login.html", {
+        "VK_APP_ID": settings.VK_CLIENT_ID,
+        "VK_REDIRECT_URI": settings.VK_REDIRECT_URI,
+    })
 
 
 @require_POST
@@ -67,11 +65,29 @@ def vk_oauth_complete(request):
     """Обработка редиректа с VK после OAuth через OneTap"""
 
     if request.method != "POST":
-        return render(request, "login.html", {"error": "Неверный метод запроса."})
+        return render(request, "registration/login.html", {
+            "error": "Неверный метод запроса.",
+            "VK_APP_ID": settings.VK_CLIENT_ID,
+            "VK_REDIRECT_URI": settings.VK_REDIRECT_URI,
+        })
 
     code = request.POST.get("code")
     if not code:
-        return render(request, "login.html", {"error": "Не удалось получить код от VK."})
+        logger.warning("VK OAuth: No code received in request")
+        return render(request, "registration/login.html", {
+            "error": "Не удалось получить код от VK.",
+            "VK_APP_ID": settings.VK_CLIENT_ID,
+            "VK_REDIRECT_URI": settings.VK_REDIRECT_URI,
+        })
+
+    # Проверяем наличие необходимых настроек
+    if not settings.VK_CLIENT_ID or not settings.VK_APP_SECRET or not settings.VK_REDIRECT_URI:
+        logger.error("VK OAuth: Missing VK configuration (VK_CLIENT_ID, VK_APP_SECRET, or VK_REDIRECT_URI)")
+        return render(request, "registration/login.html", {
+            "error": "Ошибка конфигурации сервера. Обратитесь к администратору.",
+            "VK_APP_ID": settings.VK_CLIENT_ID or "",
+            "VK_REDIRECT_URI": settings.VK_REDIRECT_URI or "",
+        })
 
     # Обмен кода на access_token
     token_url = "https://oauth.vk.com/access_token"
@@ -81,30 +97,100 @@ def vk_oauth_complete(request):
         "redirect_uri": settings.VK_REDIRECT_URI,
         "code": code,
     }
-    resp = requests.get(token_url, params=params)
-    data = resp.json()
+    
+    try:
+        logger.info(f"VK OAuth: Exchanging code for token (client_id: {settings.VK_CLIENT_ID})")
+        resp = requests.get(token_url, params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        logger.debug(f"VK OAuth: Token response received")
+    except requests.RequestException as e:
+        logger.error(f"VK OAuth: Request exception: {str(e)}")
+        return render(request, "registration/login.html", {
+            "error": f"Ошибка при запросе к VK: {str(e)}",
+            "VK_APP_ID": settings.VK_CLIENT_ID,
+            "VK_REDIRECT_URI": settings.VK_REDIRECT_URI,
+        })
 
     if "error" in data:
-        return render(request, "login.html", {"error": data.get("error_description", "Ошибка авторизации VK.")})
+        error_msg = data.get("error_description", data.get("error", "Ошибка авторизации VK."))
+        logger.warning(f"VK OAuth: Error from VK API: {error_msg}")
+        return render(request, "registration/login.html", {
+            "error": error_msg,
+            "VK_APP_ID": settings.VK_CLIENT_ID,
+            "VK_REDIRECT_URI": settings.VK_REDIRECT_URI,
+        })
 
-    vk_user_id = data["user_id"]
-    first_name = data.get("first_name", "")
-    last_name = data.get("last_name", "")
+    # VK access_token response содержит: access_token, expires_in, user_id
+    # НЕ содержит first_name и last_name - нужно сделать отдельный запрос
+    access_token = data.get("access_token")
+    vk_user_id = data.get("user_id")
+    
+    if not access_token or not vk_user_id:
+        return render(request, "registration/login.html", {
+            "error": "Не удалось получить токен доступа от VK.",
+            "VK_APP_ID": settings.VK_CLIENT_ID,
+            "VK_REDIRECT_URI": settings.VK_REDIRECT_URI,
+        })
+
+    # Получаем информацию о пользователе из VK API
+    first_name = ""
+    last_name = ""
+    try:
+        api_url = "https://api.vk.com/method/users.get"
+        api_params = {
+            "user_ids": vk_user_id,
+            "fields": "first_name,last_name",
+            "access_token": access_token,
+            "v": "5.131",
+        }
+        logger.debug(f"VK OAuth: Fetching user info for user_id: {vk_user_id}")
+        api_resp = requests.get(api_url, params=api_params, timeout=10)
+        api_resp.raise_for_status()
+        api_data = api_resp.json()
+        
+        if "error" in api_data:
+            logger.warning(f"VK OAuth: Error fetching user info: {api_data.get('error')}")
+        else:
+            users = api_data.get("response", [])
+            if users and len(users) > 0:
+                user_data = users[0]
+                first_name = user_data.get("first_name", "")
+                last_name = user_data.get("last_name", "")
+                logger.info(f"VK OAuth: User info retrieved: {first_name} {last_name}")
+    except requests.RequestException as e:
+        logger.warning(f"VK OAuth: Could not fetch user info: {str(e)}, continuing without it")
 
     # Получаем или создаём пользователя
-    user, created = User.objects.get_or_create(
-        username=f"vk_{vk_user_id}",
-        defaults={"first_name": first_name, "last_name": last_name},
-    )
+    try:
+        user, created = User.objects.get_or_create(
+            username=f"vk_{vk_user_id}",
+            defaults={"first_name": first_name, "last_name": last_name},
+        )
+        
+        # Обновляем имя, если пользователь уже существовал
+        if not created and (first_name or last_name):
+            if first_name:
+                user.first_name = first_name
+            if last_name:
+                user.last_name = last_name
+            user.save()
 
-    # Если профиль отсутствует, создаём
-    if not hasattr(user, "userprofile"):
-        UserProfile.objects.create(user=user)
+        # Если профиль отсутствует, создаём
+        if not hasattr(user, "userprofile"):
+            UserProfile.objects.create(user=user)
 
-    # Логиним
-    login(request, user)
-
-    return redirect("index")
+        # Логиним
+        login(request, user)
+        logger.info(f"VK OAuth: User {user.username} logged in successfully")
+        return redirect("index")
+    except Exception as e:
+        logger.error(f"VK OAuth: Error creating/logging in user: {str(e)}")
+        return render(request, "registration/login.html", {
+            "error": "Ошибка при создании пользователя. Попробуйте еще раз.",
+            "VK_APP_ID": settings.VK_CLIENT_ID,
+            "VK_REDIRECT_URI": settings.VK_REDIRECT_URI,
+        })
 
 
 @csrf_exempt
