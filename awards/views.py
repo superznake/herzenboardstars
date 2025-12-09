@@ -1,17 +1,16 @@
+import json
 import logging
 
 import requests
 from django.conf import settings
 from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth import login, logout
+from django.contrib.auth import login, get_backends, logout
 from django.contrib.auth.models import User
-from django.http import JsonResponse, HttpResponse
+from django.http import JsonResponse, HttpResponseForbidden, HttpResponseBadRequest, HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.decorators import login_required
 from django.contrib.admin.views.decorators import staff_member_required
-from django.views.decorators.http import require_POST
-
-logger = logging.getLogger(__name__)
+from django.views.decorators.http import require_GET, require_POST
 
 from .models import (
     AwardConfig,
@@ -45,117 +44,143 @@ def index(request):
 
 
 def vk_login_page(request):
-    """Страница входа через VK ID"""
-    return render(request, "registration/login.html", {
-        "VK_APP_ID": settings.VK_CLIENT_ID,
-        "VK_REDIRECT_URI": settings.VK_REDIRECT_URI,
-    })
+    vk_auth_url = (
+        "https://oauth.vk.com/authorize?"
+        f"client_id={settings.VK_CLIENT_ID}"
+        f"&display=page"
+        f"&redirect_uri={settings.VK_REDIRECT_URI}"
+        f"&scope=email"
+        f"&response_type=code"
+        f"&v=5.131"
+    )
+    return redirect(vk_auth_url)
 
 
 @require_POST
 def vk_logout(request):
-    """Выход пользователя"""
+    """Выход пользователя из системы"""
     logout(request)
     return redirect('index')
 
 
-def _process_vk_auth(request, access_token, vk_user_id):
-    """Обработка успешной авторизации VK"""
-    # Получаем информацию о пользователе
-    first_name = ""
-    last_name = ""
-    try:
-        api_url = "https://api.vk.com/method/users.get"
-        api_params = {
-            "user_ids": vk_user_id,
-            "fields": "first_name,last_name",
-            "access_token": access_token,
-            "v": "5.131",
-        }
-        api_resp = requests.get(api_url, params=api_params, timeout=10)
-        if api_resp.status_code == 200:
-            api_data = api_resp.json()
-            if "response" in api_data and api_data["response"]:
-                user_data = api_data["response"][0]
-                first_name = user_data.get("first_name", "")
-                last_name = user_data.get("last_name", "")
-                logger.info(f"VK Auth: User info: {first_name} {last_name}")
-    except Exception as e:
-        logger.warning(f"VK Auth: Could not fetch user info: {str(e)}")
-
-    # Создаём или получаем пользователя
-    try:
-        user, created = User.objects.get_or_create(
-            username=f"vk_{vk_user_id}",
-            defaults={"first_name": first_name, "last_name": last_name},
-        )
-        
-        if not created and (first_name or last_name):
-            if first_name:
-                user.first_name = first_name
-            if last_name:
-                user.last_name = last_name
-            user.save()
-
-        if not hasattr(user, "userprofile"):
-            UserProfile.objects.create(user=user)
-
-        login(request, user)
-        logger.info(f"VK Auth: User {user.username} logged in")
-        return redirect("index")
-        
-    except Exception as e:
-        logger.error(f"VK Auth: Error creating user: {str(e)}")
-        return render(request, "registration/login.html", {
-            "error": "Ошибка при создании пользователя.",
-            "VK_APP_ID": settings.VK_CLIENT_ID,
-            "VK_REDIRECT_URI": settings.VK_REDIRECT_URI,
-        })
+logger = logging.getLogger(__name__)
 
 
 @csrf_exempt
 def vk_oauth_complete(request):
-    """Обработка авторизации через VK ID SDK"""
+    """Обработка редиректа с VK после OAuth через OneTap"""
     
-    # Если это GET запрос с кодом (редирект от VK), показываем страницу для клиентского обмена
-    # VK ID коды требуют PKCE verifier, который доступен только на клиенте
+    # Обработка GET запроса с кодом - показываем страницу для клиентского обмена
     if request.method == "GET":
         code = request.GET.get("code")
-        device_id = request.GET.get("device_id")
         if code:
             logger.info("VK Auth: GET redirect with code, showing client-side exchange page")
-            from django.middleware.csrf import get_token
-            csrf_token = get_token(request)
             return render(request, "registration/vk_exchange.html", {
                 "code": code,
-                "device_id": device_id or "",
-                "csrf_token": csrf_token,
-                "VK_APP_ID": settings.VK_CLIENT_ID,
-                "VK_REDIRECT_URI": settings.VK_REDIRECT_URI,
+                "device_id": request.GET.get("device_id", ""),
+                "csrf_token": request.META.get("CSRF_COOKIE", ""),
             })
         else:
-            logger.info("VK Auth: GET request without code, redirecting to login")
-            return redirect('login')
+            logger.info("VK Auth: GET request to oauth endpoint, redirecting to login")
+            return redirect("login")
     
-    # POST запрос - токен уже обменян на клиенте
+    # Обработка POST запроса с access_token и user_id (после клиентского обмена)
     if request.method != "POST":
-        logger.info("VK Auth: Invalid method, redirecting to login")
-        return redirect('login')
-
-    # Получаем токен и user_id (уже обменянные на клиенте через VK ID SDK)
+        return render(request, "registration/login.html", {"error": "Неверный метод запроса."})
+    
     access_token = request.POST.get("access_token")
-    vk_user_id = request.POST.get("user_id")
+    user_id = request.POST.get("user_id")
     
-    if not access_token or not vk_user_id:
-        logger.warning("VK Auth: Missing token or user_id")
-        return render(request, "registration/login.html", {
-            "error": "Не удалось получить данные авторизации.",
-            "VK_APP_ID": settings.VK_CLIENT_ID,
-            "VK_REDIRECT_URI": settings.VK_REDIRECT_URI,
-        })
+    if not access_token or not user_id:
+        logger.error("VK Auth: Missing access_token or user_id in POST request")
+        return render(request, "registration/login.html", {"error": "Не удалось получить токен от VK."})
     
-    logger.info(f"VK Auth: Received token for user_id: {vk_user_id}")
-    return _process_vk_auth(request, access_token, vk_user_id)
+    logger.info(f"VK Auth: Received token for user_id: {user_id}")
+    
+    # Получаем информацию о пользователе из VK API
+    vk_api_url = "https://api.vk.com/method/users.get"
+    vk_params = {
+        "user_ids": user_id,
+        "access_token": access_token,
+        "fields": "first_name,last_name",
+        "v": "5.131"
+    }
+    
+    try:
+        vk_resp = requests.get(vk_api_url, params=vk_params, timeout=10)
+        vk_data = vk_resp.json()
+        
+        if "error" in vk_data:
+            logger.error(f"VK Auth: VK API error: {vk_data.get('error')}")
+            return render(request, "registration/login.html", {"error": "Ошибка при получении данных пользователя из VK."})
+        
+        if not vk_data.get("response"):
+            logger.error("VK Auth: No response from VK API")
+            return render(request, "registration/login.html", {"error": "Не удалось получить данные пользователя из VK."})
+        
+        vk_user = vk_data["response"][0]
+        first_name = vk_user.get("first_name", "")
+        last_name = vk_user.get("last_name", "")
+        full_name = f"{first_name} {last_name}".strip() or "Пользователь VK"
+        
+        logger.info(f"VK Auth: User info: {full_name}")
+        
+        # Получаем или создаём пользователя
+        try:
+            user, created = User.objects.get_or_create(
+                username=f"vk_{user_id}",
+                defaults={
+                    "first_name": first_name,
+                    "last_name": last_name,
+                }
+            )
+            
+            # Если профиль отсутствует, создаём
+            if not hasattr(user, "userprofile"):
+                UserProfile.objects.create(user=user)
+            
+            # Логиним (указываем backend, так как у нас несколько backends)
+            login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+            logger.info(f"VK Auth: User {user.username} logged in successfully")
+            return redirect("index")
+            
+        except Exception as e:
+            logger.error(f"VK Auth: Error creating user: {str(e)}")
+            return render(request, "registration/login.html", {"error": f"Ошибка при создании пользователя: {str(e)}"})
+            
+    except Exception as e:
+        logger.error(f"VK Auth: Error fetching user info from VK: {str(e)}")
+        return render(request, "registration/login.html", {"error": f"Ошибка соединения с VK: {str(e)}"})
+
+
+@csrf_exempt
+def vkid_login(request):
+    if request.method != "POST":
+        return JsonResponse({"success": False, "error": "Invalid method"})
+
+    data = json.loads(request.body)
+
+    vk_user_id = data.get("user_id")
+    token_payload = data.get("token_payload") or {}
+
+    if not vk_user_id:
+        return JsonResponse({"success": False, "error": "No user_id"})
+
+    # Имя берём из токена
+    first_name = token_payload.get("first_name", "")
+    last_name = token_payload.get("last_name", "")
+
+    # Создаём или получаем пользователя
+    user, created = User.objects.get_or_create(
+        username=f"vk_{vk_user_id}",
+        defaults={"first_name": first_name}
+    )
+
+    if not hasattr(user, "userprofile"):
+        UserProfile.objects.create(user=user)
+
+    login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+    return JsonResponse({"success": True})
 
 
 # =========================
@@ -215,7 +240,7 @@ def suggest_nominee(request, category_id):
     if award_config and award_config.current_stage != 'suggest_nominee':
         return render(request, "closed.html", {"message": "Этап предложения номинантов закрыт."})
 
-    # Проверяем, предлагал ли этот пользователь номинанта в этой категории
+    # 🔥 Проверяем, предлагал ли этот пользователь номинанта в этой категории
     already = SuggestedNominee.objects.filter(
         category=category,
         user=request.user
@@ -369,8 +394,8 @@ def jury_login(request, token):
         else:
             UserProfile.objects.create(user=user, is_jury=True)
 
-    # Логиним пользователя
-    login(request, user)
+    # Логиним пользователя (указываем backend, так как у нас несколько backends)
+    login(request, user, backend='django.contrib.auth.backends.ModelBackend')
 
     # Отмечаем токен как использованный
     token_obj.used = True
