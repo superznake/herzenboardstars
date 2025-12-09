@@ -1,22 +1,16 @@
-<div id="vk_auth"></div>
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Вход через VK</title>
+</head>
+<body>
+    <h1>Вход на сайт</h1>
+    <p>Для доступа к премии войдите через VK:</p>
 
-<script src="https://unpkg.com/@vkid/sdk@<3.0.0/dist-sdk/umd/index.js"></script>
-<script>
-    const VKID = window.VKIDSDK;
-
-    VKID.Config.init({
-        app: 54356598,
-        redirectUrl: "https://herzenboardstars.lol/oauth/complete/vk-oauth2/",
-        responseMode: VKID.ConfigResponseMode.Redirect,
-        source: VKID.ConfigSource.WEB,
-        scope: "",
-    });
-
-    const authButton = new VKID.AuthButton();
-
-    authButton.render({
-        container: "#vk_auth",
-        lang: "ru",
-        showTos: true
-    });
-</script>
+    <!-- Простейшая кнопка для начала авторизации -->
+    <a href="{% url 'login' %}" style="padding:10px 20px; background-color:#4a76a8; color:white; text-decoration:none; border-radius:5px;">
+        Войти через VK
+    </a>
+</body>
+</html>

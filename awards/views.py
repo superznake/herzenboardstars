@@ -43,11 +43,16 @@ def index(request):
 
 
 def vk_login_page(request):
-    """Страница с кнопкой VKID"""
-    return render(request, "registration/login.html", {
-        "VK_CLIENT_ID": settings.VK_CLIENT_ID,
-        "VK_REDIRECT_URI": settings.VK_REDIRECT_URI,
-    })
+    vk_auth_url = (
+        "https://oauth.vk.com/authorize?"
+        f"client_id={settings.VK_CLIENT_ID}"
+        f"&display=page"
+        f"&redirect_uri={settings.VK_REDIRECT_URI}"
+        f"&scope=email"
+        f"&response_type=code"
+        f"&v=5.131"
+    )
+    return redirect(vk_auth_url)
 
 
 @require_POST
@@ -58,54 +63,42 @@ def vk_logout(request):
 
 
 def vk_oauth_complete(request):
-    """Обработка редиректа с VK после OAuth через VKID"""
     code = request.GET.get("code")
     if not code:
-        return render(request, "registration/login.html", {"error":
-                                                               "Не удалось получить код от VK."})
+        return redirect("login")  # если нет кода, вернем на логин
 
-    # Обмен кода на токен доступа
+    # Обмен кода на access_token
     token_url = "https://oauth.vk.com/access_token"
     params = {
         "client_id": settings.VK_CLIENT_ID,
         "client_secret": settings.VK_APP_SECRET,
-        "redirect_uri": settings.VK_REDIRECT_URI,  # должен совпадать с настройками VK
-        "code": code,
+        "redirect_uri": settings.VK_REDIRECT_URI,
+        "code": code
     }
+    resp = requests.get(token_url, params=params)
+    data = resp.json()
 
-    try:
-        resp = requests.get(token_url, params=params)
-        data = resp.json()
-    except Exception as e:
-        return render(request, "registration/login.html", {"error": f"Ошибка запроса к VK: {e}"})
-
-    # Проверка на ошибки от VK
     if "error" in data:
-        return render(request, "registration/login.html", {"error": f"Ошибка авторизации VK: "
-                                                                    f"{data.get('error_description', data)}"})
+        return redirect("login")
 
-    vk_user_id = data.get("user_id")
+    vk_user_id = data["user_id"]
     first_name = data.get("first_name", "")
     last_name = data.get("last_name", "")
 
-    if not vk_user_id:
-        return render(request, "registration/login.html", {"error":
-                                                               "Не удалось получить ID пользователя VK."})
-
-    # Создание или получение пользователя Django
-    username = f"vk_{vk_user_id}"
+    # создаём пользователя или берём существующего
     user, created = User.objects.get_or_create(
-        username=username,
-        defaults={"first_name": first_name, "last_name": last_name}
+        username=f"vk_{vk_user_id}",
+        defaults={
+            "first_name": first_name,
+            "last_name": last_name
+        }
     )
 
-    # Создание профиля, если его нет
+    # создаём профиль если нет
     if not hasattr(user, "userprofile"):
         UserProfile.objects.create(user=user)
 
-    # Авторизация пользователя
-    login(request, user, backend='django.contrib.auth.backends.ModelBackend')
-
+    login(request, user)
     return redirect("index")
 
 
