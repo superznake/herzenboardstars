@@ -1,16 +1,40 @@
 {% extends "base.html" %}
 
 {% block content %}
+<p>Обработка авторизации...</p>
 <script src="https://unpkg.com/@vkid/sdk@<3.0.0/dist-sdk/umd/index.js"></script>
 <script type="text/javascript">
-  // Обмениваем код на токен на клиенте
-  if ('VKIDSDK' in window) {
+  console.log('VK Exchange page loaded');
+  
+  // Ждём загрузки SDK
+  function performExchange() {
+    if (!('VKIDSDK' in window)) {
+      console.error('VKID SDK не загружен, повторная попытка...');
+      setTimeout(performExchange, 100);
+      return;
+    }
+
     const VKID = window.VKIDSDK;
     const code = '{{ code }}';
     const deviceId = '{{ device_id }}';
 
+    console.log('Starting code exchange, code:', code.substring(0, 20) + '...');
+
     VKID.Auth.exchangeCode(code, deviceId)
       .then(function(tokenData) {
+        console.log('Exchange successful, tokenData:', tokenData);
+        
+        // Проверяем структуру ответа
+        const accessToken = tokenData.token || tokenData.access_token || tokenData.accessToken;
+        const userId = tokenData.user_id || tokenData.userId || tokenData.uid;
+
+        if (!accessToken || !userId) {
+          console.error('Missing token or user_id in response:', tokenData);
+          alert('Ошибка: не удалось получить токен от VK');
+          window.location.href = '/auth/login/';
+          return;
+        }
+
         // После успешного обмена отправляем токен на сервер
         const form = document.createElement('form');
         form.method = 'POST';
@@ -19,13 +43,13 @@
         const tokenInput = document.createElement('input');
         tokenInput.type = 'hidden';
         tokenInput.name = 'access_token';
-        tokenInput.value = tokenData.token || tokenData.access_token;
+        tokenInput.value = accessToken;
         form.appendChild(tokenInput);
 
         const userIdInput = document.createElement('input');
         userIdInput.type = 'hidden';
         userIdInput.name = 'user_id';
-        userIdInput.value = tokenData.user_id;
+        userIdInput.value = userId;
         form.appendChild(userIdInput);
 
         const csrfInput = document.createElement('input');
@@ -35,19 +59,26 @@
         form.appendChild(csrfInput);
 
         document.body.appendChild(form);
+        console.log('Submitting form to server...');
         form.submit();
       })
       .catch(function(error) {
         console.error('VKID exchange error:', error);
-        alert('Ошибка авторизации: ' + (error?.text || error?.message || 'неизвестная ошибка'));
-        window.location.href = '/auth/login/';
+        const errorMsg = error?.text || error?.message || error?.error_description || 'неизвестная ошибка';
+        console.error('Error details:', errorMsg);
+        alert('Ошибка авторизации: ' + errorMsg);
+        setTimeout(function() {
+          window.location.href = '/auth/login/';
+        }, 2000);
       });
+  }
+
+  // Запускаем обмен после загрузки страницы
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', performExchange);
   } else {
-    console.error('VKID SDK не загружен');
-    alert('Ошибка загрузки VK ID SDK');
-    window.location.href = '/auth/login/';
+    performExchange();
   }
 </script>
-<p>Обработка авторизации...</p>
 {% endblock %}
 
