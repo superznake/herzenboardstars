@@ -23,7 +23,7 @@
                             Предложить номинанта
                         </a>
                     {% elif current_stage == 'voting' %}
-                        <a href="{% url 'vote' category.id %}" class="btn btn-success mt-2">
+                        <a href="{% url 'vote' category.id %}" class="btn btn-primary mt-2">
                             Голосовать
                         </a>
                     {% endif %}
