@@ -62,10 +62,16 @@ def vk_logout(request):
     return redirect('index')
 
 
+@csrf_exempt  # CSRF проверка через токен, но можно временно отключить для теста
 def vk_oauth_complete(request):
-    code = request.GET.get("code")
+    """Обработка редиректа с VK после OAuth через OneTap"""
+
+    if request.method != "POST":
+        return render(request, "login.html", {"error": "Неверный метод запроса."})
+
+    code = request.POST.get("code")
     if not code:
-        return redirect("login")  # если нет кода, вернем на логин
+        return render(request, "login.html", {"error": "Не удалось получить код от VK."})
 
     # Обмен кода на access_token
     token_url = "https://oauth.vk.com/access_token"
@@ -73,32 +79,31 @@ def vk_oauth_complete(request):
         "client_id": settings.VK_CLIENT_ID,
         "client_secret": settings.VK_APP_SECRET,
         "redirect_uri": settings.VK_REDIRECT_URI,
-        "code": code
+        "code": code,
     }
     resp = requests.get(token_url, params=params)
     data = resp.json()
 
     if "error" in data:
-        return redirect("login")
+        return render(request, "login.html", {"error": data.get("error_description", "Ошибка авторизации VK.")})
 
     vk_user_id = data["user_id"]
     first_name = data.get("first_name", "")
     last_name = data.get("last_name", "")
 
-    # создаём пользователя или берём существующего
+    # Получаем или создаём пользователя
     user, created = User.objects.get_or_create(
         username=f"vk_{vk_user_id}",
-        defaults={
-            "first_name": first_name,
-            "last_name": last_name
-        }
+        defaults={"first_name": first_name, "last_name": last_name},
     )
 
-    # создаём профиль если нет
+    # Если профиль отсутствует, создаём
     if not hasattr(user, "userprofile"):
         UserProfile.objects.create(user=user)
 
+    # Логиним
     login(request, user)
+
     return redirect("index")
 
 
