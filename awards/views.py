@@ -63,13 +63,21 @@ def vk_logout(request):
 def vk_oauth_complete(request):
     """Обработка авторизации через VK ID SDK"""
     
-    # Если это GET запрос (прямой переход или редирект), просто перенаправляем на страницу входа
-    if request.method != "POST":
-        logger.info(f"VK Auth: GET request to oauth endpoint, redirecting to login")
+    # VK ID SDK может отправлять код через GET (редирект) или POST (форма)
+    if request.method == "GET":
+        code = request.GET.get("code")
+        device_id = request.GET.get("device_id")
+        if not code:
+            logger.info("VK Auth: GET request without code, redirecting to login")
+            return redirect('login')
+        logger.info("VK Auth: Received code via GET redirect")
+    elif request.method == "POST":
+        code = request.POST.get("code")
+        device_id = request.POST.get("device_id")
+        logger.info("VK Auth: Received code via POST")
+    else:
+        logger.warning(f"VK Auth: Invalid method {request.method}")
         return redirect('login')
-
-    code = request.POST.get("code")
-    device_id = request.POST.get("device_id")
     
     if not code:
         logger.warning("VK Auth: No code received")
