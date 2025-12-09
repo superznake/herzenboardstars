@@ -8,7 +8,7 @@
                 <span class="visually-hidden">Загрузка...</span>
             </div>
             <h3 class="mt-3">Выполняется вход через VK...</h3>
-            <p class="text-muted" id="status-text">Пожалуйста, подождите</p>
+            <p class="text-muted" id="status-text">Инициализация VK ID...</p>
         </div>
     </div>
 </div>
@@ -32,22 +32,23 @@ function updateStatus(message, isError = false) {
     }
 }
 
-// Function to handle VK SDK load errors
-function handleSDKLoadError() {
-    const spinner = document.querySelector('.spinner-border');
-    if (spinner) {
-        spinner.classList.remove('spinner-border', 'text-primary');
-        spinner.classList.add('text-danger');
+// Function to show error message
+function showError(message) {
+    updateStatus(message, true);
+    const container = document.querySelector('.container');
+    if (container) {
+        const retryBtn = document.createElement('button');
+        retryBtn.className = 'btn btn-primary mt-3';
+        retryBtn.textContent = 'Повторить';
+        retryBtn.onclick = () => window.location.reload();
+        container.appendChild(retryBtn);
     }
-    updateStatus('Не удалось загрузить VK ID SDK. Пожалуйста, обновите страницу или попробуйте позже', true);
-    console.error('VK ID SDK failed to load');
 }
 
 // Function to initialize VK ID
 function initVKID() {
     if (typeof VKID === 'undefined') {
-        handleSDKLoadError();
-        return false;
+        throw new Error('VK ID SDK не загружен');
     }
 
     try {
@@ -59,23 +60,28 @@ function initVKID() {
         return true;
     } catch (e) {
         console.error('VK ID initialization error:', e);
-        updateStatus('Ошибка инициализации VK ID', true);
-        return false;
+        throw new Error('Ошибка инициализации VK ID');
     }
 }
 
-// Function to handle VK authentication
+// Main authentication function
 async function handleVKAuth() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const code = urlParams.get('code');
-    const state = urlParams.get('state');
-
-    if (!code) {
-        updateStatus('Отсутствует код авторизации VK', true);
-        return;
-    }
-
     try {
+        updateStatus('Инициализация VK ID SDK...');
+        
+        // Initialize VK ID
+        if (!initVKID()) {
+            throw new Error('Не удалось инициализировать VK ID');
+        }
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const code = urlParams.get('code');
+        const state = urlParams.get('state');
+
+        if (!code) {
+            throw new Error('Отсутствует код авторизации VK');
+        }
+
         updateStatus('Обмен кода авторизации...');
         const exchangeResult = await VKID.Auth.exchangeCode(code, state);
         
@@ -122,44 +128,43 @@ async function handleVKAuth() {
 
     } catch (error) {
         console.error('VK Auth Error:', error);
-        updateStatus(error.message || 'Произошла ошибка при авторизации', true);
-        
-        // Add retry button
-        const container = document.querySelector('.container');
-        if (container) {
-            const retryBtn = document.createElement('button');
-            retryBtn.className = 'btn btn-primary mt-3';
-            retryBtn.textContent = 'Повторить';
-            retryBtn.onclick = () => window.location.reload();
-            container.appendChild(retryBtn);
-        }
+        showError(error.message || 'Произошла ошибка при авторизации');
     }
 }
 
-// Initialize when SDK is loaded
-function onSDKLoad() {
-    if (initVKID()) {
+// Wait for SDK to load
+function checkSDKLoaded() {
+    if (window.VKID) {
+        handleVKAuth();
+    } else {
+        setTimeout(checkSDKLoaded, 100);
+    }
+}
+
+// Start the process when the page loads
+document.addEventListener('DOMContentLoaded', () => {
+    // Start checking for SDK
+    setTimeout(() => {
+        if (!window.VKID) {
+            showError('Не удалось загрузить VK ID SDK. Пожалуйста, проверьте подключение к интернету и обновите страницу.');
+            return;
+        }
+    }, 5000); // Give up after 5 seconds
+    
+    // Start checking for SDK
+    checkSDKLoaded();
+});
+
+// Also try to handle script load event
+document.getElementById('vkid-script').addEventListener('load', () => {
+    if (window.VKID) {
         handleVKAuth();
     }
-}
+});
 
-// Check if SDK is already loaded
-if (window.VKID) {
-    onSDKLoad();
-} else {
-    // Fallback if script.onload doesn't fire
-    setTimeout(() => {
-        if (window.VKID) {
-            onSDKLoad();
-        } else {
-            handleSDKLoadError();
-        }
-    }, 2000);
-}
-
-// Add event listener for script load
-document.getElementById('vkid-script').addEventListener('load', onSDKLoad);
-document.getElementById('vkid-script').addEventListener('error', handleSDKLoadError);
+document.getElementById('vkid-script').addEventListener('error', () => {
+    showError('Не удалось загрузить VK ID SDK. Пожалуйста, проверьте подключение к интернету и обновите страницу.');
+});
 </script>
 
 <style>
