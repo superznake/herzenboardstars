@@ -8,93 +8,95 @@
                 <span class="visually-hidden">Загрузка...</span>
             </div>
             <h3 class="mt-3">Выполняется вход через VK...</h3>
-            <p class="text-muted">Пожалуйста, подождите</p>
+            <p class="text-muted" id="status-text">Пожалуйста, подождите</p>
         </div>
     </div>
 </div>
 
 <!-- Load VK ID SDK with error handling -->
-<script src="https://unpkg.com/@vkid/sdk@2.2.0/dist-sdk/umd/index.js"></script>
+<script src="https://unpkg.com/@vkid/sdk@2.2.0/dist-sdk/umd/index.js" id="vkid-script"></script>
+
 <script>
-// Check if VK ID SDK is loaded
-if (typeof VKID === 'undefined') {
+// Configuration
+const VK_APP_ID = {{ VK_APP_ID|default:54356598 }};
+const VK_REDIRECT_URI = window.location.origin + "{{ request.path }}";
+
+// Function to update status message
+function updateStatus(message, isError = false) {
+    const statusText = document.getElementById('status-text');
+    if (statusText) {
+        statusText.textContent = message;
+        if (isError) {
+            statusText.classList.add('text-danger');
+        }
+    }
+}
+
+// Function to handle VK SDK load errors
+function handleSDKLoadError() {
     const spinner = document.querySelector('.spinner-border');
-    const statusText = document.querySelector('h3');
-    const subText = document.querySelector('p');
-    
     if (spinner) {
         spinner.classList.remove('spinner-border', 'text-primary');
         spinner.classList.add('text-danger');
     }
-    if (statusText) statusText.textContent = 'Ошибка загрузки VK ID SDK';
-    if (subText) subText.textContent = 'Пожалуйста, обновите страницу или попробуйте позже';
-    
-    console.error('VK ID SDK не загружен');
-    throw new Error('VK ID SDK не загружен');
+    updateStatus('Не удалось загрузить VK ID SDK. Пожалуйста, обновите страницу или попробуйте позже', true);
+    console.error('VK ID SDK failed to load');
 }
 
-// VK ID configuration
-VKID.Config.set({
-    app: {{ VK_APP_ID|default:54356598 }},
-    redirectUrl: window.location.origin + "{{ request.path }}",
-    scopes: ["openid", "email", "phone"]
-});
+// Function to initialize VK ID
+function initVKID() {
+    if (typeof VKID === 'undefined') {
+        handleSDKLoadError();
+        return false;
+    }
 
+    try {
+        VKID.Config.set({
+            app: VK_APP_ID,
+            redirectUrl: VK_REDIRECT_URI,
+            scopes: ["openid", "email"]
+        });
+        return true;
+    } catch (e) {
+        console.error('VK ID initialization error:', e);
+        updateStatus('Ошибка инициализации VK ID', true);
+        return false;
+    }
+}
+
+// Function to handle VK authentication
 async function handleVKAuth() {
     const urlParams = new URLSearchParams(window.location.search);
     const code = urlParams.get('code');
     const state = urlParams.get('state');
-    const spinner = document.querySelector('.spinner-border');
-    const statusText = document.querySelector('h3');
-    const subText = document.querySelector('p');
-
-    function showError(message) {
-        const container = document.querySelector('.container');
-        if (!container) return;
-        
-        container.innerHTML = `
-            <div class="row justify-content-center">
-                <div class="col-md-8">
-                    <div class="alert alert-danger" role="alert">
-                        <h4 class="alert-heading">Ошибка авторизации</h4>
-                        <p>${message}</p>
-                        <hr>
-                        <p class="mb-0">
-                            <a href="{% url 'login' %}" class="btn btn-primary">Вернуться на страницу входа</a>
-                        </p>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
 
     if (!code) {
-        showError('Отсутствует код авторизации VK');
+        updateStatus('Отсутствует код авторизации VK', true);
         return;
     }
 
     try {
-        // 1. Exchange code for tokens
+        updateStatus('Обмен кода авторизации...');
         const exchangeResult = await VKID.Auth.exchangeCode(code, state);
         
-        if (!exchangeResult || !exchangeResult.access_token) {
+        if (!exchangeResult?.access_token) {
             throw new Error('Не удалось получить токен доступа');
         }
 
-        // 2. Get user info
+        updateStatus('Получение данных пользователя...');
         const userInfo = await fetch("https://id.vk.com/oauth2/user_info", {
             method: "GET",
             headers: {
-                "Authorization": "Bearer " + exchangeResult.access_token
+                "Authorization": `Bearer ${exchangeResult.access_token}`
             }
         }).then(r => r.json());
 
-        if (!userInfo || !userInfo.sub) {
+        if (!userInfo?.sub) {
             console.error("VK userinfo response:", userInfo);
             throw new Error('Не удалось получить данные пользователя');
         }
 
-        // 3. Send data to backend
+        updateStatus('Вход в систему...');
         const response = await fetch("{{ request.path }}", {
             method: "POST",
             headers: {
@@ -115,22 +117,49 @@ async function handleVKAuth() {
             throw new Error(error.error || 'Ошибка сервера');
         }
 
-        // 4. Redirect on success
         const result = await response.json();
-        if (result.redirect) {
-            window.location.href = result.redirect;
-        } else {
-            window.location.href = "/";
-        }
+        window.location.href = result.redirect || "/";
 
     } catch (error) {
         console.error('VK Auth Error:', error);
-        showError(error.message || 'Произошла ошибка при авторизации');
+        updateStatus(error.message || 'Произошла ошибка при авторизации', true);
+        
+        // Add retry button
+        const container = document.querySelector('.container');
+        if (container) {
+            const retryBtn = document.createElement('button');
+            retryBtn.className = 'btn btn-primary mt-3';
+            retryBtn.textContent = 'Повторить';
+            retryBtn.onclick = () => window.location.reload();
+            container.appendChild(retryBtn);
+        }
     }
 }
 
-// Start the authentication process when the page loads
-document.addEventListener('DOMContentLoaded', handleVKAuth);
+// Initialize when SDK is loaded
+function onSDKLoad() {
+    if (initVKID()) {
+        handleVKAuth();
+    }
+}
+
+// Check if SDK is already loaded
+if (window.VKID) {
+    onSDKLoad();
+} else {
+    // Fallback if script.onload doesn't fire
+    setTimeout(() => {
+        if (window.VKID) {
+            onSDKLoad();
+        } else {
+            handleSDKLoadError();
+        }
+    }, 2000);
+}
+
+// Add event listener for script load
+document.getElementById('vkid-script').addEventListener('load', onSDKLoad);
+document.getElementById('vkid-script').addEventListener('error', handleSDKLoadError);
 </script>
 
 <style>
