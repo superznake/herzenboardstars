@@ -81,22 +81,6 @@ def vk_oauth_complete(request):
         })
     
     logger.info(f"VK Auth: Received token for user_id: {vk_user_id}")
-        
-        if not access_token or not vk_user_id:
-            logger.error(f"VK Auth: Missing token or user_id in response: {token_response}")
-            return render(request, "registration/login.html", {
-                "error": "Не удалось получить данные от VK.",
-                "VK_APP_ID": settings.VK_CLIENT_ID,
-                "VK_REDIRECT_URI": settings.VK_REDIRECT_URI,
-            })
-        
-    except requests.RequestException as e:
-        logger.error(f"VK Auth: Request failed: {str(e)}")
-        return render(request, "registration/login.html", {
-            "error": f"Ошибка соединения с VK: {str(e)}",
-            "VK_APP_ID": settings.VK_CLIENT_ID,
-            "VK_REDIRECT_URI": settings.VK_REDIRECT_URI,
-        })
 
     # Получаем информацию о пользователе
     first_name = ""
