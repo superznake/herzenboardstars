@@ -33,35 +33,41 @@
       })
       .on(VKID.WidgetEvents.ERROR, vkidOnError)
       .on(VKID.OneTapInternalEvents.LOGIN_SUCCESS, function (payload) {
-        // Отправляем код напрямую на сервер, без обмена на клиенте
+        // Обмениваем код на токен на клиенте (как требует VK ID SDK)
         const code = payload.code;
         const deviceId = payload.device_id;
 
-        // Отправляем код на сервер для обмена на токен
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = '/oauth/complete/vk-oauth2/';
+        VKID.Auth.exchangeCode(code, deviceId)
+          .then(function(tokenData) {
+            // После успешного обмена отправляем токен на сервер
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/oauth/complete/vk-oauth2/';
 
-        const codeInput = document.createElement('input');
-        codeInput.type = 'hidden';
-        codeInput.name = 'code';
-        codeInput.value = code;
-        form.appendChild(codeInput);
+            const tokenInput = document.createElement('input');
+            tokenInput.type = 'hidden';
+            tokenInput.name = 'access_token';
+            tokenInput.value = tokenData.token || tokenData.access_token;
+            form.appendChild(tokenInput);
 
-        const deviceIdInput = document.createElement('input');
-        deviceIdInput.type = 'hidden';
-        deviceIdInput.name = 'device_id';
-        deviceIdInput.value = deviceId;
-        form.appendChild(deviceIdInput);
+            const userIdInput = document.createElement('input');
+            userIdInput.type = 'hidden';
+            userIdInput.name = 'user_id';
+            userIdInput.value = tokenData.user_id;
+            form.appendChild(userIdInput);
 
-        const csrfInput = document.createElement('input');
-        csrfInput.type = 'hidden';
-        csrfInput.name = 'csrfmiddlewaretoken';
-        csrfInput.value = '{{ csrf_token }}';
-        form.appendChild(csrfInput);
+            const csrfInput = document.createElement('input');
+            csrfInput.type = 'hidden';
+            csrfInput.name = 'csrfmiddlewaretoken';
+            csrfInput.value = '{{ csrf_token }}';
+            form.appendChild(csrfInput);
 
-        document.body.appendChild(form);
-        form.submit();
+            document.body.appendChild(form);
+            form.submit();
+          })
+          .catch(function(error) {
+            vkidOnError(error);
+          });
       });
 
       function vkidOnError(error) {

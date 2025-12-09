@@ -63,90 +63,24 @@ def vk_logout(request):
 def vk_oauth_complete(request):
     """Обработка авторизации через VK ID SDK"""
     
-    # VK ID SDK может отправлять код через GET (редирект) или POST (форма)
-    if request.method == "GET":
-        code = request.GET.get("code")
-        device_id = request.GET.get("device_id")
-        if not code:
-            logger.info("VK Auth: GET request without code, redirecting to login")
-            return redirect('login')
-        logger.info("VK Auth: Received code via GET redirect")
-    elif request.method == "POST":
-        code = request.POST.get("code")
-        device_id = request.POST.get("device_id")
-        logger.info("VK Auth: Received code via POST")
-    else:
-        logger.warning(f"VK Auth: Invalid method {request.method}")
+    # Обрабатываем только POST запросы (токен уже обменян на клиенте)
+    if request.method != "POST":
+        logger.info("VK Auth: Non-POST request, redirecting to login")
         return redirect('login')
+
+    # Получаем токен и user_id (уже обменянные на клиенте через VK ID SDK)
+    access_token = request.POST.get("access_token")
+    vk_user_id = request.POST.get("user_id")
     
-    if not code:
-        logger.warning("VK Auth: No code received")
+    if not access_token or not vk_user_id:
+        logger.warning("VK Auth: Missing token or user_id")
         return render(request, "registration/login.html", {
-            "error": "Не удалось получить код от VK.",
+            "error": "Не удалось получить данные авторизации.",
             "VK_APP_ID": settings.VK_CLIENT_ID,
             "VK_REDIRECT_URI": settings.VK_REDIRECT_URI,
         })
-
-    if not settings.VK_CLIENT_ID or not settings.VK_APP_SECRET:
-        logger.error("VK Auth: Missing configuration")
-        return render(request, "registration/login.html", {
-            "error": "Ошибка конфигурации сервера.",
-            "VK_APP_ID": settings.VK_CLIENT_ID or "",
-            "VK_REDIRECT_URI": settings.VK_REDIRECT_URI or "",
-        })
-
-    # Обмениваем код на токен через стандартный OAuth endpoint VK
-    # VK ID коды работают через стандартный OAuth endpoint
-    token_url = "https://oauth.vk.com/access_token"
-    token_params = {
-        "client_id": str(settings.VK_CLIENT_ID),
-        "client_secret": settings.VK_APP_SECRET,
-        "code": code,
-        "redirect_uri": settings.VK_REDIRECT_URI,
-    }
     
-    try:
-        logger.info(f"VK Auth: Exchanging code for token (code starts with: {code[:10]}...)")
-        # Стандартный OAuth endpoint использует GET запрос
-        resp = requests.get(token_url, params=token_params, timeout=10)
-        logger.debug(f"VK Auth: Response {resp.status_code}, Content-Type: {resp.headers.get('Content-Type', 'unknown')}")
-        logger.debug(f"VK Auth: Response body (first 500 chars): {resp.text[:500]}")
-        
-        if resp.status_code != 200:
-            # Пытаемся извлечь ошибку из ответа
-            try:
-                error_data = resp.json()
-                error_msg = error_data.get("error_description", error_data.get("error", f"HTTP {resp.status_code}"))
-            except:
-                error_msg = f"HTTP {resp.status_code}"
-            logger.error(f"VK Auth: Token exchange failed: {error_msg}")
-            return render(request, "registration/login.html", {
-                "error": f"Ошибка авторизации: {error_msg}",
-                "VK_APP_ID": settings.VK_CLIENT_ID,
-                "VK_REDIRECT_URI": settings.VK_REDIRECT_URI,
-            })
-        
-        try:
-            token_response = resp.json()
-        except ValueError as e:
-            logger.error(f"VK Auth: Invalid JSON response. Error: {str(e)}, Response: {resp.text[:500]}")
-            return render(request, "registration/login.html", {
-                "error": "Ошибка ответа от VK: неверный формат данных",
-                "VK_APP_ID": settings.VK_CLIENT_ID,
-                "VK_REDIRECT_URI": settings.VK_REDIRECT_URI,
-            })
-        
-        if "error" in token_response:
-            error_msg = token_response.get("error_description", token_response.get("error", "Ошибка авторизации"))
-            logger.error(f"VK Auth: API error: {error_msg}")
-            return render(request, "registration/login.html", {
-                "error": error_msg,
-                "VK_APP_ID": settings.VK_CLIENT_ID,
-                "VK_REDIRECT_URI": settings.VK_REDIRECT_URI,
-            })
-        
-        access_token = token_response.get("access_token")
-        vk_user_id = token_response.get("user_id")
+    logger.info(f"VK Auth: Received token for user_id: {vk_user_id}")
         
         if not access_token or not vk_user_id:
             logger.error(f"VK Auth: Missing token or user_id in response: {token_response}")
