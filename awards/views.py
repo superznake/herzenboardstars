@@ -380,19 +380,27 @@ def jury_login(request, token):
         user = User.objects.create(username=username)
         user.set_unusable_password()
         user.save()
-        # профиль с is_jury=True
-        UserProfile.objects.create(user=user, is_jury=True)
+        # профиль с is_jury=True (используем get_or_create, так как сигнал может уже создать профиль)
+        user_profile, created = UserProfile.objects.get_or_create(
+            user=user,
+            defaults={'is_jury': True}
+        )
+        if not created:
+            # Если профиль уже существовал, обновляем статус жюри
+            user_profile.is_jury = True
+            user_profile.save()
         token_obj.user = user
         token_obj.save()
     else:
         user = token_obj.user
         # Обновляем статус жюри на всякий случай
-        user_profile = getattr(user, 'userprofile', None)
-        if user_profile:
+        user_profile, created = UserProfile.objects.get_or_create(
+            user=user,
+            defaults={'is_jury': True}
+        )
+        if not created:
             user_profile.is_jury = True
             user_profile.save()
-        else:
-            UserProfile.objects.create(user=user, is_jury=True)
 
     # Логиним пользователя (указываем backend, так как у нас несколько backends)
     login(request, user, backend='django.contrib.auth.backends.ModelBackend')
