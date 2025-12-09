@@ -1,8 +1,6 @@
 from django.urls import path
 from django.contrib import admin
-from django.contrib.auth import views as auth_views
 from awards import views
-from awards.views import vkid_login
 
 urlpatterns = [
     # Админка
@@ -10,10 +8,9 @@ urlpatterns = [
 
     # Главная страница
     path('', views.index, name='index'),
-    path("auth/vk/login/", vkid_login, name="vkid_login"),
-    # VK-логин (страница с кнопкой VK)
+
+    # VK авторизация
     path('auth/login/', views.vk_login_page, name='login'),
-    # urls.py
     path('oauth/complete/vk-oauth2/', views.vk_oauth_complete, name='vk_oauth_complete'),
     path('auth/logout/', views.vk_logout, name='logout'),
 
