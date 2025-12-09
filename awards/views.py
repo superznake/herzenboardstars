@@ -63,9 +63,26 @@ def vk_logout(request):
 def vk_oauth_complete(request):
     """Обработка авторизации через VK ID SDK"""
     
-    # Обрабатываем только POST запросы (токен уже обменян на клиенте)
+    # Если это GET запрос с кодом (редирект от VK), показываем страницу для клиентского обмена
+    if request.method == "GET":
+        code = request.GET.get("code")
+        device_id = request.GET.get("device_id")
+        if code:
+            logger.info("VK Auth: GET redirect with code, showing exchange page")
+            from django.middleware.csrf import get_token
+            csrf_token = get_token(request)
+            return render(request, "registration/vk_exchange.html", {
+                "code": code,
+                "device_id": device_id or "",
+                "csrf_token": csrf_token,
+            })
+        else:
+            logger.info("VK Auth: GET request without code, redirecting to login")
+            return redirect('login')
+    
+    # POST запрос - токен уже обменян на клиенте
     if request.method != "POST":
-        logger.info("VK Auth: Non-POST request, redirecting to login")
+        logger.info("VK Auth: Invalid method, redirecting to login")
         return redirect('login')
 
     # Получаем токен и user_id (уже обменянные на клиенте через VK ID SDK)
