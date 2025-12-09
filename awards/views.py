@@ -85,46 +85,21 @@ def vk_oauth_complete(request):
             logger.info("VK Auth: GET request to oauth endpoint, redirecting to login")
             return redirect("login")
     
-    # Обработка POST запроса с access_token и user_id (после клиентского обмена)
+    # Обработка POST запроса с user_id и user info (после клиентского обмена)
     if request.method != "POST":
         return render(request, "registration/login.html", {"error": "Неверный метод запроса."})
     
-    access_token = request.POST.get("access_token")
     user_id = request.POST.get("user_id")
+    first_name = request.POST.get("first_name", "")
+    last_name = request.POST.get("last_name", "")
     
-    if not access_token or not user_id:
-        logger.error("VK Auth: Missing access_token or user_id in POST request")
-        return render(request, "registration/login.html", {"error": "Не удалось получить токен от VK."})
+    if not user_id:
+        logger.error("VK Auth: Missing user_id in POST request")
+        return render(request, "registration/login.html", {"error": "Не удалось получить данные пользователя от VK."})
     
-    logger.info(f"VK Auth: Received token for user_id: {user_id}")
-    
-    # Получаем информацию о пользователе из VK API
-    vk_api_url = "https://api.vk.com/method/users.get"
-    vk_params = {
-        "user_ids": user_id,
-        "access_token": access_token,
-        "fields": "first_name,last_name",
-        "v": "5.131"
-    }
-    
-    try:
-        vk_resp = requests.get(vk_api_url, params=vk_params, timeout=10)
-        vk_data = vk_resp.json()
-        
-        if "error" in vk_data:
-            logger.error(f"VK Auth: VK API error: {vk_data.get('error')}")
-            return render(request, "registration/login.html", {"error": "Ошибка при получении данных пользователя из VK."})
-        
-        if not vk_data.get("response"):
-            logger.error("VK Auth: No response from VK API")
-            return render(request, "registration/login.html", {"error": "Не удалось получить данные пользователя из VK."})
-        
-        vk_user = vk_data["response"][0]
-        first_name = vk_user.get("first_name", "")
-        last_name = vk_user.get("last_name", "")
-        full_name = f"{first_name} {last_name}".strip() or "Пользователь VK"
-        
-        logger.info(f"VK Auth: User info: {full_name}")
+    logger.info(f"VK Auth: Received user data for user_id: {user_id}")
+    full_name = f"{first_name} {last_name}".strip() or "Пользователь VK"
+    logger.info(f"VK Auth: User info: {full_name}")
         
         # Получаем или создаём пользователя
         try:

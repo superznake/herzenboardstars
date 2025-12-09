@@ -72,32 +72,87 @@
           return;
         }
 
-        // После успешного обмена отправляем токен на сервер
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = '/oauth/complete/vk-oauth2/';
+        // Получаем информацию о пользователе на клиенте (чтобы избежать проблем с IP)
+        console.log('Fetching user info from VK API...');
+        const vkApiUrl = 'https://api.vk.com/method/users.get';
+        const vkParams = new URLSearchParams({
+          user_ids: userId,
+          access_token: accessToken,
+          fields: 'first_name,last_name',
+          v: '5.131'
+        });
 
-        const tokenInput = document.createElement('input');
-        tokenInput.type = 'hidden';
-        tokenInput.name = 'access_token';
-        tokenInput.value = accessToken;
-        form.appendChild(tokenInput);
+        fetch(vkApiUrl + '?' + vkParams.toString())
+          .then(function(response) {
+            return response.json();
+          })
+          .then(function(vkData) {
+            console.log('VK API response:', vkData);
+            
+            if (vkData.error) {
+              console.error('VK API error:', vkData.error);
+              alert('Ошибка при получении данных пользователя: ' + (vkData.error.error_msg || 'Неизвестная ошибка'));
+              setTimeout(function() {
+                window.location.href = '/auth/login/';
+              }, 3000);
+              return;
+            }
 
-        const userIdInput = document.createElement('input');
-        userIdInput.type = 'hidden';
-        userIdInput.name = 'user_id';
-        userIdInput.value = userId;
-        form.appendChild(userIdInput);
+            if (!vkData.response || !vkData.response[0]) {
+              console.error('No user data in VK response');
+              alert('Не удалось получить данные пользователя из VK.');
+              setTimeout(function() {
+                window.location.href = '/auth/login/';
+              }, 3000);
+              return;
+            }
 
-        const csrfInput = document.createElement('input');
-        csrfInput.type = 'hidden';
-        csrfInput.name = 'csrfmiddlewaretoken';
-        csrfInput.value = '{{ csrf_token }}';
-        form.appendChild(csrfInput);
+            const vkUser = vkData.response[0];
+            const firstName = vkUser.first_name || '';
+            const lastName = vkUser.last_name || '';
 
-        document.body.appendChild(form);
-        console.log('Submitting form to server with token and user_id:', userId);
-        form.submit();
+            console.log('User info retrieved:', firstName, lastName);
+
+            // Отправляем данные пользователя на сервер (без access_token)
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '/oauth/complete/vk-oauth2/';
+
+            const userIdInput = document.createElement('input');
+            userIdInput.type = 'hidden';
+            userIdInput.name = 'user_id';
+            userIdInput.value = userId;
+            form.appendChild(userIdInput);
+
+            const firstNameInput = document.createElement('input');
+            firstNameInput.type = 'hidden';
+            firstNameInput.name = 'first_name';
+            firstNameInput.value = firstName;
+            form.appendChild(firstNameInput);
+
+            const lastNameInput = document.createElement('input');
+            lastNameInput.type = 'hidden';
+            lastNameInput.name = 'last_name';
+            lastNameInput.value = lastName;
+            form.appendChild(lastNameInput);
+
+            const csrfInput = document.createElement('input');
+            csrfInput.type = 'hidden';
+            csrfInput.name = 'csrfmiddlewaretoken';
+            csrfInput.value = '{{ csrf_token }}';
+            form.appendChild(csrfInput);
+
+            document.body.appendChild(form);
+            console.log('Submitting form to server with user data');
+            form.submit();
+          })
+          .catch(function(error) {
+            console.error('Error fetching user info:', error);
+            alert('Ошибка соединения с VK: ' + error.message);
+            setTimeout(function() {
+              window.location.href = '/auth/login/';
+            }, 3000);
+          });
       })
       .catch(function(error) {
         console.error('VKID exchange error:', error);
