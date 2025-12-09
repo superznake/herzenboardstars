@@ -3,3 +3,5 @@ db.sqlite3
 .env1
 .env
 *.pyc
+/awards/migrations/__pycache__
+/awards/__pycache__
