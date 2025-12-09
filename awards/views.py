@@ -69,7 +69,7 @@ logger = logging.getLogger(__name__)
 
 @csrf_exempt
 def vk_oauth_complete(request):
-    """Обработка редиректа с VK после OAuth через OneTap"""
+    """Обработка редиректа с VK после OAuth"""
     
     # Обработка GET запроса с кодом - показываем страницу для клиентского обмена
     if request.method == "GET":
@@ -78,44 +78,75 @@ def vk_oauth_complete(request):
             logger.info("VK Auth: GET redirect with code, showing client-side exchange page")
             return render(request, "registration/vk_exchange.html", {
                 "code": code,
-                "device_id": request.GET.get("device_id", ""),
                 "csrf_token": request.META.get("CSRF_COOKIE", ""),
                 "VK_APP_ID": settings.VK_CLIENT_ID,
-                "VK_REDIRECT_URI": settings.VK_REDIRECT_URI,
             })
         else:
             logger.info("VK Auth: GET request to oauth endpoint, redirecting to login")
             return redirect("login")
     
-    # Обработка POST запроса с user_id и user info (после клиентского обмена)
+    # Обработка POST запроса с кодом авторизации
     if request.method != "POST":
         return JsonResponse({"success": False, "error": "Invalid request method"}, status=405)
     
-    # Check if the request is JSON
-    if request.content_type == 'application/json':
-        try:
-            data = json.loads(request.body)
-            user_id = data.get('vk_id')
-            first_name = data.get('first_name', '')
-            last_name = data.get('last_name', '')
-        except json.JSONDecodeError:
-            return JsonResponse({"success": False, "error": "Invalid JSON data"}, status=400)
-    else:
-        # Fallback to form data
-        user_id = request.POST.get("user_id")
-        first_name = request.POST.get("first_name", "")
-        last_name = request.POST.get("last_name", "")
-    
-    if not user_id:
-        logger.error("VK Auth: Missing user_id in POST request")
-        return render(request, "registration/login.html", {"error": "Не удалось получить данные пользователя от VK."})
-    
-    logger.info(f"VK Auth: Received user data for user_id: {user_id}")
-    full_name = f"{first_name} {last_name}".strip() or "Пользователь VK"
-    logger.info(f"VK Auth: User info: {full_name}")
-    
-    # Получаем или создаём пользователя
     try:
+        # Получаем данные из запроса
+        if request.content_type == 'application/json':
+            data = json.loads(request.body)
+        else:
+            data = request.POST
+            
+        code = data.get('code')
+        redirect_uri = data.get('redirect_uri')
+        
+        if not code:
+            return JsonResponse({"success": False, "error": "Отсутствует код авторизации"}, status=400)
+        
+        # Обмениваем код на access token
+        token_url = 'https://oauth.vk.com/access_token'
+        params = {
+            'client_id': settings.VK_CLIENT_ID,
+            'client_secret': settings.VK_APP_SECRET,
+            'redirect_uri': redirect_uri or settings.VK_REDIRECT_URI,
+            'code': code
+        }
+        
+        response = requests.get(token_url, params=params)
+        response.raise_for_status()
+        token_data = response.json()
+        
+        if 'error' in token_data:
+            logger.error(f"VK Auth: Error exchanging code: {token_data.get('error_description', 'Unknown error')}")
+            return JsonResponse({
+                "success": False,
+                "error": token_data.get('error_description', 'Ошибка при обмене кода авторизации')
+            }, status=400)
+        
+        # Получаем информацию о пользователе
+        user_info_url = 'https://api.vk.com/method/users.get'
+        params = {
+            'access_token': token_data['access_token'],
+            'fields': 'first_name,last_name',
+            'v': '5.131'
+        }
+        
+        user_response = requests.get(user_info_url, params=params)
+        user_response.raise_for_status()
+        user_data = user_response.json()
+        
+        if 'error' in user_data or 'response' not in user_data or not user_data['response']:
+            logger.error(f"VK Auth: Error getting user info: {user_data.get('error', {}).get('error_msg', 'Unknown error')}")
+            return JsonResponse({
+                "success": False,
+                "error": "Не удалось получить данные пользователя из VK"
+            }, status=400)
+        
+        vk_user = user_data['response'][0]
+        user_id = vk_user['id']
+        first_name = vk_user.get('first_name', '')
+        last_name = vk_user.get('last_name', '')
+        
+        # Получаем или создаём пользователя
         user, created = User.objects.get_or_create(
             username=f"vk_{user_id}",
             defaults={
@@ -124,59 +155,75 @@ def vk_oauth_complete(request):
             }
         )
         
+        # Обновляем имя, если оно изменилось
+        if not created and (user.first_name != first_name or user.last_name != last_name):
+            user.first_name = first_name
+            user.last_name = last_name
+            user.save()
+        
         # Если профиль отсутствует, создаём
         if not hasattr(user, "userprofile"):
             UserProfile.objects.create(user=user)
         
-        # Логиним (указываем backend, так как у нас несколько backends)
+        # Логиним пользователя
         login(request, user, backend='django.contrib.auth.backends.ModelBackend')
         logger.info(f"VK Auth: User {user.username} logged in successfully")
         
-        # Проверяем, есть ли в сессии токен жюри
-        jury_token_str = request.session.get('jury_token')
-        if jury_token_str:
-            try:
-                jury_token = uuid.UUID(jury_token_str)
-                token_obj = JuryToken.objects.filter(token=jury_token, used=False).first()
-                if token_obj and token_obj.is_valid():
-                    # Привязываем токен к пользователю
-                    token_obj.user = user
-                    token_obj.save()
-                    
-                    # Устанавливаем статус жюри
-                    user_profile, created = UserProfile.objects.get_or_create(
-                        user=user,
-                        defaults={'is_jury': True}
-                    )
-                    if not created:
-                        user_profile.is_jury = True
-                        user_profile.save()
-                    
-                    # Отмечаем токен как использованный
-                    token_obj.used = True
-                    token_obj.save()
-                    
-                    # Удаляем токен из сессии
-                    del request.session['jury_token']
-                    logger.info(f"VK Auth: Jury token {jury_token_str} associated with user {user.username}")
-            except (ValueError, JuryToken.DoesNotExist) as e:
-                logger.warning(f"VK Auth: Invalid jury token in session: {e}")
-                # Удаляем невалидный токен из сессии
-                if 'jury_token' in request.session:
-                    del request.session['jury_token']
+        # Проверяем токен жюри
+        self._check_jury_token(request, user)
         
-        return redirect("index")
+        return JsonResponse({
+            "success": True,
+            "redirect": "/"
+        })
         
+    except requests.RequestException as e:
+        logger.error(f"VK Auth: Request error: {str(e)}")
+        return JsonResponse({
+            "success": False,
+            "error": f"Ошибка при обращении к API VK: {str(e)}"
+        }, status=500)
     except Exception as e:
-        logger.error(f"VK Auth: Error creating user: {str(e)}")
-        if request.content_type == 'application/json':
-            return JsonResponse({"success": False, "error": f"Ошибка при создании пользователя: {str(e)}"}, status=500)
-        return render(request, "registration/login.html", {"error": f"Ошибка при создании пользователя: {str(e)}"})
-    
-    # Return JSON response for AJAX requests
-    if request.content_type == 'application/json':
-        return JsonResponse({"success": True, "redirect": "/"})
+        logger.error(f"VK Auth: Unexpected error: {str(e)}")
+        return JsonResponse({
+            "success": False,
+            "error": f"Внутренняя ошибка сервера: {str(e)}"
+        }, status=500)
 
+def _check_jury_token(self, request, user):
+    """Проверка и обработка токена жюри"""
+    jury_token_str = request.session.get('jury_token')
+    if not jury_token_str:
+        return
+        
+    try:
+        jury_token = uuid.UUID(jury_token_str)
+        token_obj = JuryToken.objects.filter(token=jury_token, used=False).first()
+        if token_obj and token_obj.is_valid():
+            # Привязываем токен к пользователю
+            token_obj.user = user
+            token_obj.save()
+            
+            # Устанавливаем статус жюри
+            user_profile, created = UserProfile.objects.get_or_create(
+                user=user,
+                defaults={'is_jury': True}
+            )
+            if not created:
+                user_profile.is_jury = True
+                user_profile.save()
+            
+            # Отмечаем токен как использованный
+            token_obj.used = True
+            token_obj.save()
+            
+            # Удаляем токен из сессии
+            del request.session['jury_token']
+            logger.info(f"VK Auth: Jury token {jury_token_str} associated with user {user.username}")
+    except (ValueError, JuryToken.DoesNotExist) as e:
+        logger.warning(f"VK Auth: Invalid jury token in session: {e}")
+        if 'jury_token' in request.session:
+            del request.session['jury_token']
 
 @csrf_exempt
 def vkid_login(request):

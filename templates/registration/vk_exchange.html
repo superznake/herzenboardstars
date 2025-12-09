@@ -9,20 +9,28 @@
             </div>
             <h3 class="mt-3">Выполняется вход через VK...</h3>
             <p class="text-muted" id="status-text">Инициализация VK ID...</p>
+            <div id="debug-info" class="text-start small text-muted mt-3" style="display: none;"></div>
         </div>
     </div>
 </div>
 
-<!-- Load VK ID SDK with error handling -->
-<script src="https://unpkg.com/@vkid/sdk@2.2.0/dist-sdk/umd/index.js" id="vkid-script"></script>
+<!-- Load VK ID SDK directly from VK's CDN -->
+<script src="https://id.vk.com/js/api/openapi.js" type="text/javascript" id="vkid-script"></script>
 
 <script>
-// Configuration
-const VK_APP_ID = {{ VK_APP_ID|default:54356598 }};
-const VK_REDIRECT_URI = window.location.origin + "{{ request.path }}";
+// Debug function to log messages
+function debugLog(message) {
+    console.log('[DEBUG]', message);
+    const debugEl = document.getElementById('debug-info');
+    if (debugEl) {
+        debugEl.style.display = 'block';
+        debugEl.innerHTML += `<div>${new Date().toISOString()}: ${message}</div>`;
+    }
+}
 
 // Function to update status message
 function updateStatus(message, isError = false) {
+    debugLog(`Status update: ${message}`);
     const statusText = document.getElementById('status-text');
     if (statusText) {
         statusText.textContent = message;
@@ -34,6 +42,7 @@ function updateStatus(message, isError = false) {
 
 // Function to show error message
 function showError(message) {
+    debugLog(`Error: ${message}`);
     updateStatus(message, true);
     const container = document.querySelector('.container');
     if (container) {
@@ -45,64 +54,34 @@ function showError(message) {
     }
 }
 
-// Function to initialize VK ID
-function initVKID() {
-    if (typeof VKID === 'undefined') {
-        throw new Error('VK ID SDK не загружен');
-    }
-
-    try {
-        VKID.Config.set({
-            app: VK_APP_ID,
-            redirectUrl: VK_REDIRECT_URI,
-            scopes: ["openid", "email"]
-        });
-        return true;
-    } catch (e) {
-        console.error('VK ID initialization error:', e);
-        throw new Error('Ошибка инициализации VK ID');
-    }
-}
-
 // Main authentication function
 async function handleVKAuth() {
     try {
-        updateStatus('Инициализация VK ID SDK...');
+        updateStatus('Проверка загрузки VK ID SDK...');
         
-        // Initialize VK ID
-        if (!initVKID()) {
-            throw new Error('Не удалось инициализировать VK ID');
+        // Check if VK object is available
+        if (typeof VK === 'undefined') {
+            throw new Error('VK SDK не загружен. Пожалуйста, проверьте подключение к интернету.');
         }
+
+        updateStatus('Инициализация VK API...');
+        
+        // Initialize VK API
+        VK.init({
+            apiId: {{ VK_APP_ID|default:54356598 }},
+            onlyWidgets: false
+        });
 
         const urlParams = new URLSearchParams(window.location.search);
         const code = urlParams.get('code');
-        const state = urlParams.get('state');
 
         if (!code) {
             throw new Error('Отсутствует код авторизации VK');
         }
 
         updateStatus('Обмен кода авторизации...');
-        const exchangeResult = await VKID.Auth.exchangeCode(code, state);
         
-        if (!exchangeResult?.access_token) {
-            throw new Error('Не удалось получить токен доступа');
-        }
-
-        updateStatus('Получение данных пользователя...');
-        const userInfo = await fetch("https://id.vk.com/oauth2/user_info", {
-            method: "GET",
-            headers: {
-                "Authorization": `Bearer ${exchangeResult.access_token}`
-            }
-        }).then(r => r.json());
-
-        if (!userInfo?.sub) {
-            console.error("VK userinfo response:", userInfo);
-            throw new Error('Не удалось получить данные пользователя');
-        }
-
-        updateStatus('Вход в систему...');
+        // Exchange code for access token
         const response = await fetch("{{ request.path }}", {
             method: "POST",
             headers: {
@@ -110,21 +89,24 @@ async function handleVKAuth() {
                 "X-CSRFToken": "{{ csrf_token }}"
             },
             body: JSON.stringify({
-                vk_id: userInfo.sub,
-                first_name: userInfo.given_name || "",
-                last_name: userInfo.family_name || "",
-                email: userInfo.email || "",
-                access_token: exchangeResult.access_token
+                code: code,
+                redirect_uri: window.location.origin + "{{ request.path }}"
             })
         });
 
         if (!response.ok) {
             const error = await response.json().catch(() => ({}));
-            throw new Error(error.error || 'Ошибка сервера');
+            throw new Error(error.error || 'Ошибка сервера при обмене кода');
         }
 
         const result = await response.json();
-        window.location.href = result.redirect || "/";
+        debugLog('Auth result:', result);
+        
+        if (result.redirect) {
+            window.location.href = result.redirect;
+        } else {
+            window.location.href = "/";
+        }
 
     } catch (error) {
         console.error('VK Auth Error:', error);
@@ -132,38 +114,44 @@ async function handleVKAuth() {
     }
 }
 
-// Wait for SDK to load
-function checkSDKLoaded() {
-    if (window.VKID) {
-        handleVKAuth();
-    } else {
-        setTimeout(checkSDKLoaded, 100);
-    }
-}
-
-// Start the process when the page loads
+// Wait for the page and VK SDK to load
 document.addEventListener('DOMContentLoaded', () => {
-    // Start checking for SDK
-    setTimeout(() => {
-        if (!window.VKID) {
-            showError('Не удалось загрузить VK ID SDK. Пожалуйста, проверьте подключение к интернету и обновите страницу.');
-            return;
+    // Start checking for VK SDK
+    let attempts = 0;
+    const maxAttempts = 10;
+    const checkInterval = 500; // ms
+
+    const checkVKSDK = setInterval(() => {
+        attempts++;
+        debugLog(`Проверка VK SDK (попытка ${attempts}/${maxAttempts})`);
+        
+        if (window.VK) {
+            clearInterval(checkVKSDK);
+            debugLog('VK SDK загружен, начинаем аутентификацию');
+            handleVKAuth();
+        } else if (attempts >= maxAttempts) {
+            clearInterval(checkVKSDK);
+            showError('Не удалось загрузить VK SDK. Пожалуйста, проверьте подключение к интернету и обновите страницу.');
         }
-    }, 5000); // Give up after 5 seconds
-    
-    // Start checking for SDK
-    checkSDKLoaded();
-});
+    }, checkInterval);
 
-// Also try to handle script load event
-document.getElementById('vkid-script').addEventListener('load', () => {
-    if (window.VKID) {
-        handleVKAuth();
+    // Also try to handle script load/error events
+    const vkScript = document.getElementById('vkid-script');
+    if (vkScript) {
+        vkScript.addEventListener('load', () => {
+            debugLog('Скрипт VK загружен');
+            if (window.VK) {
+                clearInterval(checkVKSDK);
+                handleVKAuth();
+            }
+        });
+
+        vkScript.addEventListener('error', () => {
+            debugLog('Ошибка загрузки скрипта VK');
+            clearInterval(checkVKSDK);
+            showError('Не удалось загрузить VK SDK. Пожалуйста, проверьте подключение к интернету.');
+        });
     }
-});
-
-document.getElementById('vkid-script').addEventListener('error', () => {
-    showError('Не удалось загрузить VK ID SDK. Пожалуйста, проверьте подключение к интернету и обновите страницу.');
 });
 </script>
 
@@ -171,6 +159,14 @@ document.getElementById('vkid-script').addEventListener('error', () => {
 .spinner-border {
     width: 3rem;
     height: 3rem;
+}
+#debug-info {
+    max-height: 200px;
+    overflow-y: auto;
+    background: #f8f9fa;
+    padding: 10px;
+    border-radius: 4px;
+    font-family: monospace;
 }
 </style>
 {% endblock %}
