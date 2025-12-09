@@ -100,67 +100,63 @@ def vk_oauth_complete(request):
     logger.info(f"VK Auth: Received user data for user_id: {user_id}")
     full_name = f"{first_name} {last_name}".strip() or "Пользователь VK"
     logger.info(f"VK Auth: User info: {full_name}")
+    
+    # Получаем или создаём пользователя
+    try:
+        user, created = User.objects.get_or_create(
+            username=f"vk_{user_id}",
+            defaults={
+                "first_name": first_name,
+                "last_name": last_name,
+            }
+        )
         
-        # Получаем или создаём пользователя
-        try:
-            user, created = User.objects.get_or_create(
-                username=f"vk_{user_id}",
-                defaults={
-                    "first_name": first_name,
-                    "last_name": last_name,
-                }
-            )
-            
-            # Если профиль отсутствует, создаём
-            if not hasattr(user, "userprofile"):
-                UserProfile.objects.create(user=user)
-            
-            # Логиним (указываем backend, так как у нас несколько backends)
-            login(request, user, backend='django.contrib.auth.backends.ModelBackend')
-            logger.info(f"VK Auth: User {user.username} logged in successfully")
-            
-            # Проверяем, есть ли в сессии токен жюри
-            jury_token_str = request.session.get('jury_token')
-            if jury_token_str:
-                try:
-                    jury_token = uuid.UUID(jury_token_str)
-                    token_obj = JuryToken.objects.filter(token=jury_token, used=False).first()
-                    if token_obj and token_obj.is_valid():
-                        # Привязываем токен к пользователю
-                        token_obj.user = user
-                        token_obj.save()
-                        
-                        # Устанавливаем статус жюри
-                        user_profile, created = UserProfile.objects.get_or_create(
-                            user=user,
-                            defaults={'is_jury': True}
-                        )
-                        if not created:
-                            user_profile.is_jury = True
-                            user_profile.save()
-                        
-                        # Отмечаем токен как использованный
-                        token_obj.used = True
-                        token_obj.save()
-                        
-                        # Удаляем токен из сессии
-                        del request.session['jury_token']
-                        logger.info(f"VK Auth: Jury token {jury_token_str} associated with user {user.username}")
-                except (ValueError, JuryToken.DoesNotExist) as e:
-                    logger.warning(f"VK Auth: Invalid jury token in session: {e}")
-                    # Удаляем невалидный токен из сессии
-                    if 'jury_token' in request.session:
-                        del request.session['jury_token']
-            
-            return redirect("index")
-            
-        except Exception as e:
-            logger.error(f"VK Auth: Error creating user: {str(e)}")
-            return render(request, "registration/login.html", {"error": f"Ошибка при создании пользователя: {str(e)}"})
-            
+        # Если профиль отсутствует, создаём
+        if not hasattr(user, "userprofile"):
+            UserProfile.objects.create(user=user)
+        
+        # Логиним (указываем backend, так как у нас несколько backends)
+        login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+        logger.info(f"VK Auth: User {user.username} logged in successfully")
+        
+        # Проверяем, есть ли в сессии токен жюри
+        jury_token_str = request.session.get('jury_token')
+        if jury_token_str:
+            try:
+                jury_token = uuid.UUID(jury_token_str)
+                token_obj = JuryToken.objects.filter(token=jury_token, used=False).first()
+                if token_obj and token_obj.is_valid():
+                    # Привязываем токен к пользователю
+                    token_obj.user = user
+                    token_obj.save()
+                    
+                    # Устанавливаем статус жюри
+                    user_profile, created = UserProfile.objects.get_or_create(
+                        user=user,
+                        defaults={'is_jury': True}
+                    )
+                    if not created:
+                        user_profile.is_jury = True
+                        user_profile.save()
+                    
+                    # Отмечаем токен как использованный
+                    token_obj.used = True
+                    token_obj.save()
+                    
+                    # Удаляем токен из сессии
+                    del request.session['jury_token']
+                    logger.info(f"VK Auth: Jury token {jury_token_str} associated with user {user.username}")
+            except (ValueError, JuryToken.DoesNotExist) as e:
+                logger.warning(f"VK Auth: Invalid jury token in session: {e}")
+                # Удаляем невалидный токен из сессии
+                if 'jury_token' in request.session:
+                    del request.session['jury_token']
+        
+        return redirect("index")
+        
     except Exception as e:
-        logger.error(f"VK Auth: Error fetching user info from VK: {str(e)}")
-        return render(request, "registration/login.html", {"error": f"Ошибка соединения с VK: {str(e)}"})
+        logger.error(f"VK Auth: Error creating user: {str(e)}")
+        return render(request, "registration/login.html", {"error": f"Ошибка при создании пользователя: {str(e)}"})
 
 
 @csrf_exempt
