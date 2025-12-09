@@ -1,5 +1,6 @@
 import json
 import logging
+import uuid
 
 import requests
 from django.conf import settings
@@ -142,6 +143,40 @@ def vk_oauth_complete(request):
             # Логиним (указываем backend, так как у нас несколько backends)
             login(request, user, backend='django.contrib.auth.backends.ModelBackend')
             logger.info(f"VK Auth: User {user.username} logged in successfully")
+            
+            # Проверяем, есть ли в сессии токен жюри
+            jury_token_str = request.session.get('jury_token')
+            if jury_token_str:
+                try:
+                    jury_token = uuid.UUID(jury_token_str)
+                    token_obj = JuryToken.objects.filter(token=jury_token, used=False).first()
+                    if token_obj and token_obj.is_valid():
+                        # Привязываем токен к пользователю
+                        token_obj.user = user
+                        token_obj.save()
+                        
+                        # Устанавливаем статус жюри
+                        user_profile, created = UserProfile.objects.get_or_create(
+                            user=user,
+                            defaults={'is_jury': True}
+                        )
+                        if not created:
+                            user_profile.is_jury = True
+                            user_profile.save()
+                        
+                        # Отмечаем токен как использованный
+                        token_obj.used = True
+                        token_obj.save()
+                        
+                        # Удаляем токен из сессии
+                        del request.session['jury_token']
+                        logger.info(f"VK Auth: Jury token {jury_token_str} associated with user {user.username}")
+                except (ValueError, JuryToken.DoesNotExist) as e:
+                    logger.warning(f"VK Auth: Invalid jury token in session: {e}")
+                    # Удаляем невалидный токен из сессии
+                    if 'jury_token' in request.session:
+                        del request.session['jury_token']
+            
             return redirect("index")
             
         except Exception as e:
@@ -367,6 +402,7 @@ def count(request):
 def jury_login(request, token):
     """
     Авторизация жюри по одноразовому токену через VK.
+    Пользователь должен войти через VK, после чего токен будет привязан к его аккаунту.
     """
     token_obj = get_object_or_404(JuryToken, token=token)
 
@@ -374,43 +410,35 @@ def jury_login(request, token):
     if not token_obj.is_valid():
         return HttpResponse("Токен недействителен или уже использован.", status=400)
 
-    # Если пользователь ещё не привязан к токену, создаём временного VK-пользователя
-    if token_obj.user is None:
-        username = f"jury_{token_obj.token.hex[:8]}"
-        user = User.objects.create(username=username)
-        user.set_unusable_password()
-        user.save()
-        # профиль с is_jury=True (используем get_or_create, так как сигнал может уже создать профиль)
-        user_profile, created = UserProfile.objects.get_or_create(
-            user=user,
-            defaults={'is_jury': True}
-        )
-        if not created:
-            # Если профиль уже существовал, обновляем статус жюри
-            user_profile.is_jury = True
-            user_profile.save()
-        token_obj.user = user
-        token_obj.save()
-    else:
-        user = token_obj.user
-        # Обновляем статус жюри на всякий случай
-        user_profile, created = UserProfile.objects.get_or_create(
-            user=user,
-            defaults={'is_jury': True}
-        )
-        if not created:
-            user_profile.is_jury = True
-            user_profile.save()
-
-    # Логиним пользователя (указываем backend, так как у нас несколько backends)
-    login(request, user, backend='django.contrib.auth.backends.ModelBackend')
-
-    # Отмечаем токен как использованный
-    token_obj.used = True
-    token_obj.save()
-
-    # Редирект на текущий этап премии
-    return redirect('index')
+    # Если пользователь уже авторизован через VK, привязываем токен к нему
+    if request.user.is_authenticated:
+        # Проверяем, что пользователь авторизован через VK (username начинается с vk_)
+        if request.user.username.startswith('vk_'):
+            # Привязываем токен к пользователю
+            token_obj.user = request.user
+            token_obj.save()
+            
+            # Устанавливаем статус жюри
+            user_profile, created = UserProfile.objects.get_or_create(
+                user=request.user,
+                defaults={'is_jury': True}
+            )
+            if not created:
+                user_profile.is_jury = True
+                user_profile.save()
+            
+            # Отмечаем токен как использованный
+            token_obj.used = True
+            token_obj.save()
+            
+            return redirect('index')
+        else:
+            # Пользователь авторизован, но не через VK - выходим и просим войти через VK
+            logout(request)
+    
+    # Пользователь не авторизован - сохраняем токен в сессии и перенаправляем на VK логин
+    request.session['jury_token'] = str(token)
+    return redirect('login')
 
 
 # =========================
