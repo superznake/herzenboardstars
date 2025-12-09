@@ -59,84 +59,6 @@ def vk_logout(request):
     return redirect('index')
 
 
-def _exchange_vk_code(request, code, device_id=None):
-    """Вспомогательная функция для обмена VK ID кода на токен"""
-    if not settings.VK_CLIENT_ID or not settings.VK_APP_SECRET:
-        logger.error("VK Auth: Missing configuration")
-        return render(request, "registration/login.html", {
-            "error": "Ошибка конфигурации сервера.",
-            "VK_APP_ID": settings.VK_CLIENT_ID or "",
-            "VK_REDIRECT_URI": settings.VK_REDIRECT_URI or "",
-        })
-
-    # Пробуем использовать VK ID endpoint для обмена
-    token_url = "https://id.vk.ru/oauth2/auth"
-    token_data = {
-        "grant_type": "authorization_code",
-        "code": code,
-        "client_id": str(settings.VK_CLIENT_ID),
-        "client_secret": settings.VK_APP_SECRET,
-        "redirect_uri": settings.VK_REDIRECT_URI,
-    }
-    if device_id:
-        token_data["device_id"] = device_id
-
-    try:
-        logger.info(f"VK Auth: Exchanging code via VK ID endpoint")
-        resp = requests.post(token_url, json=token_data, timeout=10)
-        logger.debug(f"VK Auth: Response {resp.status_code}: {resp.text[:200]}")
-        
-        if resp.status_code == 200:
-            token_response = resp.json()
-            access_token = token_response.get("access_token")
-            vk_user_id = token_response.get("user_id")
-            
-            if access_token and vk_user_id:
-                return _process_vk_auth(request, access_token, vk_user_id)
-        
-        # Если VK ID endpoint не сработал, пробуем стандартный OAuth
-        logger.info("VK Auth: VK ID endpoint failed, trying standard OAuth")
-        token_url = "https://oauth.vk.com/access_token"
-        token_params = {
-            "client_id": str(settings.VK_CLIENT_ID),
-            "client_secret": settings.VK_APP_SECRET,
-            "code": code,
-            "redirect_uri": settings.VK_REDIRECT_URI,
-        }
-        resp = requests.get(token_url, params=token_params, timeout=10)
-        
-        if resp.status_code == 200:
-            token_response = resp.json()
-            if "error" not in token_response:
-                access_token = token_response.get("access_token")
-                vk_user_id = token_response.get("user_id")
-                if access_token and vk_user_id:
-                    return _process_vk_auth(request, access_token, vk_user_id)
-        
-        error_msg = "Не удалось обменять код на токен"
-        if resp.status_code != 200:
-            try:
-                error_data = resp.json()
-                error_msg = error_data.get("error_description", error_data.get("error", error_msg))
-            except:
-                error_msg = f"HTTP {resp.status_code}"
-        
-        logger.error(f"VK Auth: Exchange failed: {error_msg}")
-        return render(request, "registration/login.html", {
-            "error": f"Ошибка авторизации: {error_msg}",
-            "VK_APP_ID": settings.VK_CLIENT_ID,
-            "VK_REDIRECT_URI": settings.VK_REDIRECT_URI,
-        })
-        
-    except requests.RequestException as e:
-        logger.error(f"VK Auth: Request failed: {str(e)}")
-        return render(request, "registration/login.html", {
-            "error": f"Ошибка соединения с VK: {str(e)}",
-            "VK_APP_ID": settings.VK_CLIENT_ID,
-            "VK_REDIRECT_URI": settings.VK_REDIRECT_URI,
-        })
-
-
 def _process_vk_auth(request, access_token, vk_user_id):
     """Обработка успешной авторизации VK"""
     # Получаем информацию о пользователе
@@ -195,14 +117,22 @@ def _process_vk_auth(request, access_token, vk_user_id):
 def vk_oauth_complete(request):
     """Обработка авторизации через VK ID SDK"""
     
-    # Если это GET запрос с кодом (редирект от VK), обмениваем код на сервере
+    # Если это GET запрос с кодом (редирект от VK), показываем страницу для клиентского обмена
+    # VK ID коды требуют PKCE verifier, который доступен только на клиенте
     if request.method == "GET":
         code = request.GET.get("code")
         device_id = request.GET.get("device_id")
         if code:
-            logger.info("VK Auth: GET redirect with code, exchanging server-side")
-            # Обмениваем код на токен через VK ID endpoint
-            return _exchange_vk_code(request, code, device_id)
+            logger.info("VK Auth: GET redirect with code, showing client-side exchange page")
+            from django.middleware.csrf import get_token
+            csrf_token = get_token(request)
+            return render(request, "registration/vk_exchange.html", {
+                "code": code,
+                "device_id": device_id or "",
+                "csrf_token": csrf_token,
+                "VK_APP_ID": settings.VK_CLIENT_ID,
+                "VK_REDIRECT_URI": settings.VK_REDIRECT_URI,
+            })
         else:
             logger.info("VK Auth: GET request without code, redirecting to login")
             return redirect('login')
@@ -225,57 +155,7 @@ def vk_oauth_complete(request):
         })
     
     logger.info(f"VK Auth: Received token for user_id: {vk_user_id}")
-
-    # Получаем информацию о пользователе
-    first_name = ""
-    last_name = ""
-    try:
-        api_url = "https://api.vk.com/method/users.get"
-        api_params = {
-            "user_ids": vk_user_id,
-            "fields": "first_name,last_name",
-            "access_token": access_token,
-            "v": "5.131",
-        }
-        api_resp = requests.get(api_url, params=api_params, timeout=10)
-        if api_resp.status_code == 200:
-            api_data = api_resp.json()
-            if "response" in api_data and api_data["response"]:
-                user_data = api_data["response"][0]
-                first_name = user_data.get("first_name", "")
-                last_name = user_data.get("last_name", "")
-                logger.info(f"VK Auth: User info: {first_name} {last_name}")
-    except Exception as e:
-        logger.warning(f"VK Auth: Could not fetch user info: {str(e)}")
-
-    # Создаём или получаем пользователя
-    try:
-        user, created = User.objects.get_or_create(
-            username=f"vk_{vk_user_id}",
-            defaults={"first_name": first_name, "last_name": last_name},
-        )
-        
-        if not created and (first_name or last_name):
-            if first_name:
-                user.first_name = first_name
-            if last_name:
-                user.last_name = last_name
-            user.save()
-
-        if not hasattr(user, "userprofile"):
-            UserProfile.objects.create(user=user)
-
-        login(request, user)
-        logger.info(f"VK Auth: User {user.username} logged in")
-        return redirect("index")
-        
-    except Exception as e:
-        logger.error(f"VK Auth: Error creating user: {str(e)}")
-        return render(request, "registration/login.html", {
-            "error": "Ошибка при создании пользователя.",
-            "VK_APP_ID": settings.VK_CLIENT_ID,
-            "VK_REDIRECT_URI": settings.VK_REDIRECT_URI,
-        })
+    return _process_vk_auth(request, access_token, vk_user_id)
 
 
 # =========================

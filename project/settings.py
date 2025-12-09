@@ -143,7 +143,7 @@ STATIC_ROOT = os.path.join(BASE_DIR, 'static')
 
 # Исходная статика в приложениях (если есть)
 STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, 'awards', 'static'),  # пример
+    # os.path.join(BASE_DIR, 'awards', 'static'),  # Раскомментируйте если создадите папку
 ]
 
 AUTHENTICATION_BACKENDS = (

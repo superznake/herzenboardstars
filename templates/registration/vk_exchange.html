@@ -6,32 +6,69 @@
 <script type="text/javascript">
   console.log('VK Exchange page loaded');
   
-  // Ждём загрузки SDK
+  // Инициализируем SDK перед использованием
   function performExchange() {
     if (!('VKIDSDK' in window)) {
-      console.error('VKID SDK не загружен, повторная попытка...');
+      console.log('VKID SDK не загружен, ожидание...');
       setTimeout(performExchange, 100);
       return;
     }
 
     const VKID = window.VKIDSDK;
+    
+    // Инициализируем конфигурацию SDK (важно для работы exchangeCode)
+    try {
+      VKID.Config.init({
+        app: {{ VK_APP_ID|default:"54356598" }},
+        redirectUrl: '{{ VK_REDIRECT_URI|default:"https://herzenboardstars.lol/oauth/complete/vk-oauth2/" }}',
+        responseMode: VKID.ConfigResponseMode.Callback,
+        source: VKID.ConfigSource.LOWCODE,
+        scope: '',
+      });
+      console.log('VKID SDK initialized');
+    } catch (e) {
+      console.error('Failed to init VKID Config:', e);
+    }
+
     const code = '{{ code }}';
     const deviceId = '{{ device_id }}';
 
-    console.log('Starting code exchange, code:', code.substring(0, 20) + '...');
+    console.log('Starting code exchange, code:', code.substring(0, 20) + '...', 'deviceId:', deviceId);
 
+    // Используем SDK для обмена кода
     VKID.Auth.exchangeCode(code, deviceId)
       .then(function(tokenData) {
-        console.log('Exchange successful, tokenData:', tokenData);
+        console.log('Exchange successful, tokenData keys:', Object.keys(tokenData));
         
-        // Проверяем структуру ответа
-        const accessToken = tokenData.token || tokenData.access_token || tokenData.accessToken;
-        const userId = tokenData.user_id || tokenData.userId || tokenData.uid;
+        // Проверяем структуру ответа - VK ID SDK может возвращать разные форматы
+        let accessToken = null;
+        let userId = null;
+
+        // Пробуем разные возможные поля
+        if (tokenData.token) {
+          accessToken = tokenData.token;
+          userId = tokenData.user_id || tokenData.userId || tokenData.uid;
+        } else if (tokenData.access_token) {
+          accessToken = tokenData.access_token;
+          userId = tokenData.user_id || tokenData.userId || tokenData.uid;
+        } else if (tokenData.accessToken) {
+          accessToken = tokenData.accessToken;
+          userId = tokenData.userId || tokenData.user_id || tokenData.uid;
+        } else {
+          // Может быть вложенная структура
+          const data = tokenData.data || tokenData.response || tokenData;
+          accessToken = data?.token || data?.access_token || data?.accessToken;
+          userId = data?.user_id || data?.userId || data?.uid;
+        }
+
+        console.log('Extracted token:', accessToken ? 'present' : 'missing', 'user_id:', userId);
 
         if (!accessToken || !userId) {
-          console.error('Missing token or user_id in response:', tokenData);
-          alert('Ошибка: не удалось получить токен от VK');
-          window.location.href = '/auth/login/';
+          console.error('Missing token or user_id. Full response:', tokenData);
+          alert('Ошибка: не удалось получить токен от VK. Проверьте консоль для деталей.');
+          setTimeout(function() {
+            window.location.href = '/auth/login/';
+          }, 3000);
           return;
         }
 
@@ -59,25 +96,27 @@
         form.appendChild(csrfInput);
 
         document.body.appendChild(form);
-        console.log('Submitting form to server...');
+        console.log('Submitting form to server with token and user_id:', userId);
         form.submit();
       })
       .catch(function(error) {
         console.error('VKID exchange error:', error);
         const errorMsg = error?.text || error?.message || error?.error_description || 'неизвестная ошибка';
-        console.error('Error details:', errorMsg);
-        alert('Ошибка авторизации: ' + errorMsg);
+        console.error('Error details:', errorMsg, 'Full error:', error);
+        alert('Ошибка авторизации: ' + errorMsg + '\n\nПроверьте консоль браузера для деталей.');
         setTimeout(function() {
           window.location.href = '/auth/login/';
-        }, 2000);
+        }, 3000);
       });
   }
 
-  // Запускаем обмен после загрузки страницы
+  // Запускаем обмен после загрузки SDK
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', performExchange);
+    document.addEventListener('DOMContentLoaded', function() {
+      setTimeout(performExchange, 500); // Даём время SDK загрузиться
+    });
   } else {
-    performExchange();
+    setTimeout(performExchange, 500);
   }
 </script>
 {% endblock %}
