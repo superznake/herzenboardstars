@@ -8,14 +8,11 @@
                 <span class="visually-hidden">Загрузка...</span>
             </div>
             <h3 class="mt-3">Выполняется вход через VK...</h3>
-            <p class="text-muted" id="status-text">Инициализация VK ID...</p>
+            <p class="text-muted" id="status-text">Инициализация...</p>
             <div id="debug-info" class="text-start small text-muted mt-3" style="display: none;"></div>
         </div>
     </div>
 </div>
-
-<!-- Load VK ID SDK directly from VK's CDN -->
-<script src="https://id.vk.com/js/api/openapi.js" type="text/javascript" id="vkid-script"></script>
 
 <script>
 // Debug function to log messages
@@ -57,21 +54,8 @@ function showError(message) {
 // Main authentication function
 async function handleVKAuth() {
     try {
-        updateStatus('Проверка загрузки VK ID SDK...');
+        updateStatus('Получение кода авторизации...');
         
-        // Check if VK object is available
-        if (typeof VK === 'undefined') {
-            throw new Error('VK SDK не загружен. Пожалуйста, проверьте подключение к интернету.');
-        }
-
-        updateStatus('Инициализация VK API...');
-        
-        // Initialize VK API
-        VK.init({
-            apiId: {{ VK_APP_ID|default:54356598 }},
-            onlyWidgets: false
-        });
-
         const urlParams = new URLSearchParams(window.location.search);
         const code = urlParams.get('code');
 
@@ -81,7 +65,7 @@ async function handleVKAuth() {
 
         updateStatus('Обмен кода авторизации...');
         
-        // Exchange code for access token
+        // Exchange code for access token by sending to our backend
         const response = await fetch("{{ request.path }}", {
             method: "POST",
             headers: {
@@ -102,7 +86,9 @@ async function handleVKAuth() {
         const result = await response.json();
         debugLog('Auth result:', result);
         
-        if (result.redirect) {
+        if (result.access_token) {
+            // Use the access token to authenticate the user
+            // ...
             window.location.href = result.redirect;
         } else {
             window.location.href = "/";
@@ -114,44 +100,11 @@ async function handleVKAuth() {
     }
 }
 
-// Wait for the page and VK SDK to load
+// Start the authentication process when the page loads
 document.addEventListener('DOMContentLoaded', () => {
-    // Start checking for VK SDK
-    let attempts = 0;
-    const maxAttempts = 10;
-    const checkInterval = 500; // ms
-
-    const checkVKSDK = setInterval(() => {
-        attempts++;
-        debugLog(`Проверка VK SDK (попытка ${attempts}/${maxAttempts})`);
-        
-        if (window.VK) {
-            clearInterval(checkVKSDK);
-            debugLog('VK SDK загружен, начинаем аутентификацию');
-            handleVKAuth();
-        } else if (attempts >= maxAttempts) {
-            clearInterval(checkVKSDK);
-            showError('Не удалось загрузить VK SDK. Пожалуйста, проверьте подключение к интернету и обновите страницу.');
-        }
-    }, checkInterval);
-
-    // Also try to handle script load/error events
-    const vkScript = document.getElementById('vkid-script');
-    if (vkScript) {
-        vkScript.addEventListener('load', () => {
-            debugLog('Скрипт VK загружен');
-            if (window.VK) {
-                clearInterval(checkVKSDK);
-                handleVKAuth();
-            }
-        });
-
-        vkScript.addEventListener('error', () => {
-            debugLog('Ошибка загрузки скрипта VK');
-            clearInterval(checkVKSDK);
-            showError('Не удалось загрузить VK SDK. Пожалуйста, проверьте подключение к интернету.');
-        });
-    }
+    // Start authentication immediately without waiting for VK SDK
+    debugLog('Страница загружена, начинаем аутентификацию');
+    handleVKAuth();
 });
 </script>
 
