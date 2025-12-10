@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <title>HerzenBoardStars</title>
-    <link href="https://cdn.jsdelivr.net/gh/superznake/gik-bootstrap@7e0de52/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/gh/superznake/gik-bootstrap@5d3eaae/bootstrap.min.css" rel="stylesheet">
 </head>
 <body>
 <nav class="navbar navbar-expand-lg navbar-light bg-light">
@@ -15,10 +15,10 @@
                 <span class="me-2">Привет, {{ request.user.first_name }}</span>
                 <form action="{% url 'logout' %}" method="post" class="d-inline">
                     {% csrf_token %}
-                    <button type="submit" class="btn btn-sm btn-outline-secondary">Выйти</button>
+                    <button type="submit" class="btn btn-sm btn-secondary">Выйти</button>
                 </form>
             {% else %}
-                <a href="{% url 'login' %}" class="btn btn-sm btn-outline-primary">Войти</a>
+                <a href="{% url 'login' %}" class="btn btn-sm btn-primary">Войти</a>
             {% endif %}
         </div>
     </div>
