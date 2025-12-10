@@ -9,16 +9,45 @@
 
 {% if main_categories %}
     <h2>Основные категории</h2>
-    <ul>
-    {% for category in main_categories %}
-        <li>
-            <strong>{{ category.name }}</strong>
-            {% if category.description %}
-                <p>{{ category.description }}</p>
-            {% endif %}
-        </li>
-    {% endfor %}
-    </ul>
+
+    <div id="categoriesCarousel" class="carousel slide" data-bs-ride="carousel">
+      <div class="carousel-inner">
+
+        {% for category in main_categories %}
+          <div class="carousel-item {% if forloop.first %}active{% endif %}">
+            <div class="card p-3 shadow-sm h-100">
+              <h4>{{ category.name }}</h4>
+
+              {% if category.description %}
+                <p class="text-muted">{{ category.description }}</p>
+              {% endif %}
+
+              {% if current_stage == 'suggest_nominee' %}
+                <a href="{% url 'suggest_nominee' category.id %}" class="btn btn-primary mt-2">
+                    Предложить номинанта
+                </a>
+              {% elif current_stage == 'voting' %}
+                <a href="{% url 'vote' category.id %}" class="btn btn-primary mt-2">
+                    Голосовать
+                </a>
+              {% endif %}
+            </div>
+          </div>
+        {% endfor %}
+
+      </div>
+
+      <!-- Навигация карусели -->
+      <button class="carousel-control-prev" type="button" data-bs-target="#categoriesCarousel" data-bs-slide="prev">
+        <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+        <span class="visually-hidden">Предыдущая</span>
+      </button>
+      <button class="carousel-control-next" type="button" data-bs-target="#categoriesCarousel" data-bs-slide="next">
+        <span class="carousel-control-next-icon" aria-hidden="true"></span>
+        <span class="visually-hidden">Следующая</span>
+      </button>
+
+    </div>
 {% endif %}
 
 <p>Текущий этап премии: <strong>{{ award_config.get_current_stage_display }}</strong></p>
