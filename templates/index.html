@@ -33,6 +33,6 @@
 {% elif current_stage == 'finished' %}
     <p class="mt-3">Текущий этап завершён. Ожидайте подсчёта голосов.</p>
 {% elif current_stage == 'results' %}
-    <a href="{% url 'results_public' %}" class="btn btn btn-lg mt-3">Посмотреть результаты</a>
+    <a href="{% url 'results_public' %}" class="btn btn-primary btn-lg mt-3">Посмотреть результаты</a>
 {% endif %}
 {% endblock %}
